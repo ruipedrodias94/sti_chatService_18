@@ -116,6 +116,7 @@ public class ChatClient implements Runnable
         else
             // Calls new client
             client = new ChatClient(args[0], Integer.parseInt(args[1]));
+        System.out.println("Teste");
     }
     
 }
