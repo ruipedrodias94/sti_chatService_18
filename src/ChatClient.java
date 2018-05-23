@@ -1,15 +1,24 @@
 
+import utils.Message;
+
 import java.net.*;
 import java.io.*;
+import java.security.PublicKey;
 
+
+//TODO: Transformar todas as streams de inputs para objects
 
 public class ChatClient implements Runnable
 {  
     private Socket socket              = null;
     private Thread thread              = null;
-    private DataInputStream  console   = null;
-    private DataOutputStream streamOut = null;
+    private DataInputStream console = null;
+    private ObjectOutputStream streamOut = null;
     private ChatClientThread client    = null;
+
+
+    private PublicKey serverPublicKey = null;
+
 
     public ChatClient(String serverName, int serverPort)
     {  
@@ -44,7 +53,7 @@ public class ChatClient implements Runnable
            try
            {  
                // Sends message from console to server
-               streamOut.writeUTF(console.readLine());
+               streamOut.writeObject(console.readLine());
                streamOut.flush();
            }
          
@@ -55,12 +64,20 @@ public class ChatClient implements Runnable
            }
        }
     }
+
+
+    public void handle(Message message){
+        if (message.isHandShake()){
+            System.out.println("Handshake from server. Public key received");
+            this.serverPublicKey = message.getPublicKey();
+            System.out.println(this.serverPublicKey);
+        }
+    }
     
-    
-    public void handle(String msg)
+    /*public void handle(String msg)
     {  
         // Receives message from server
-        if (msg.equals(".quit"))
+        if ( msg.equals(".quit"))
         {  
             // Leaving, quit command
             System.out.println("Exiting...Please press RETURN to exit ...");
@@ -68,14 +85,16 @@ public class ChatClient implements Runnable
         }
         else
             // else, writes message received from server to console
+            System.out.println("Recebe alguma coisa?");
             System.out.println(msg);
-    }
+    }*/
     
     // Inits new client thread
     public void start() throws IOException
-    {  
+    {
         console   = new DataInputStream(System.in);
-        streamOut = new DataOutputStream(socket.getOutputStream());
+        streamOut = new ObjectOutputStream(socket.getOutputStream());
+
         if (thread == null)
         {  
             client = new ChatClientThread(this, socket);
@@ -124,7 +143,7 @@ class ChatClientThread extends Thread
 {  
     private Socket           socket   = null;
     private ChatClient       client   = null;
-    private DataInputStream  streamIn = null;
+    private ObjectInputStream  streamIn = null;
 
     public ChatClientThread(ChatClient _client, Socket _socket)
     {  
@@ -138,7 +157,7 @@ class ChatClientThread extends Thread
     {  
         try
         {  
-            streamIn  = new DataInputStream(socket.getInputStream());
+            streamIn  = new ObjectInputStream(socket.getInputStream());
         }
         catch(IOException ioe)
         {  
@@ -164,14 +183,18 @@ class ChatClientThread extends Thread
     {  
         while (true)
         {   try
-            {  
-                client.handle(streamIn.readUTF());
+            {
+                client.handle((Message) streamIn.readObject());
             }
             catch(IOException ioe)
             {  
                 System.out.println("Listening error: " + ioe.getMessage());
                 client.stop();
-            }
+
+            } catch (ClassNotFoundException e) {
+
+            e.printStackTrace();
+        }
         }
     }
 }
