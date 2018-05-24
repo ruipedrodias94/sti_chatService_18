@@ -9,9 +9,14 @@ public class Message implements Serializable {
     private byte[] encryptedDataString;
     private boolean handShake;
     private PublicKey publicKey;
+    private  String simpleString;
 
     public Message(){
 
+    }
+
+    public Message(String simpleString){
+        this.setSimpleString(simpleString);
     }
 
     /**
@@ -45,5 +50,13 @@ public class Message implements Serializable {
 
     public void setPublicKey(PublicKey publicKey) {
         this.publicKey = publicKey;
+    }
+
+    public String getSimpleString() {
+        return simpleString;
+    }
+
+    public void setSimpleString(String simpleString) {
+        this.simpleString = simpleString;
     }
 }

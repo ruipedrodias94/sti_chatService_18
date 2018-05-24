@@ -38,12 +38,12 @@ public class ChatServer implements Runnable
 
             	//Getting all the keys for the server
 
-                javaCripto = new JavaCripto();
+                this.javaCripto = new JavaCripto();
 
                 KeyPair serverKeyPair = javaCripto.generateKeyPar(2048);
 
-                serverPublicKey = serverKeyPair.getPublic();
-                serverPrivateKey = serverKeyPair.getPrivate();
+                this.serverPublicKey = serverKeyPair.getPublic();
+                this.serverPrivateKey = serverKeyPair.getPrivate();
 
 
             	start();
@@ -105,9 +105,9 @@ public class ChatServer implements Runnable
         	return -1;
     	}
     
-    	public synchronized void handle(int ID, String input)
+    	public synchronized void handle(int ID, Message message)
     	{  
-        	if (input.equals(".quit"))
+        	/*if (input.equals(".quit"))
             	{  
                 	int leaving_id = findClient(ID);
                 	// Client exits
@@ -121,7 +121,18 @@ public class ChatServer implements Runnable
         	else
             		// Brodcast message for every other client online
             		for (int i = 0; i < clientCount; i++)
-                		clients[i].send(ID + ": " + input);   
+                		clients[i].send(ID + ": " + input);   */
+
+        	if (message.isHandShake()){
+				System.out.println("Recebeu a key publica do cliente" + message.getPublicKey());
+			}
+			else {
+
+				System.out.println("EVERYBODY ELSE NO SERVIDOR");
+				System.out.println(message.getSimpleString());
+				for (int i = 0; i < clientCount; i++)
+					clients[i].send(message);
+			}
     	}
     
     	public synchronized void remove(int ID)
@@ -168,6 +179,7 @@ public class ChatServer implements Runnable
                 		//The addThread will be the "handshake" so we sent a type of message, only with the public key
                         Message handshakeMessage = new Message(this.serverPublicKey);
                 		clients[clientCount].sendPublicKeyToClient(handshakeMessage);
+
                 		clientCount++; 
             		}
             		catch(IOException ioe)
@@ -212,7 +224,7 @@ class ChatServerThread extends Thread
     }
     
     // Sends message to client
-    public void send(String msg)
+    public void send(Message msg)
     {   
         try
         {  
@@ -243,7 +255,7 @@ class ChatServerThread extends Thread
         {  
             try
             {  
-                server.handle(ID, (String) streamIn.readObject());
+                server.handle(ID, (Message) streamIn.readObject());
             }
          
             catch(IOException ioe)

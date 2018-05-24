@@ -1,9 +1,10 @@
 
+import utils.JavaCripto;
 import utils.Message;
 
 import java.net.*;
 import java.io.*;
-import java.security.PublicKey;
+import java.security.*;
 
 
 //TODO: Transformar todas as streams de inputs para objects
@@ -17,7 +18,12 @@ public class ChatClient implements Runnable
     private ChatClientThread client    = null;
 
 
-    private PublicKey serverPublicKey = null;
+    private PublicKey serverPublicKey;
+
+    private PrivateKey clientPrivateKey;
+    private PublicKey clientPublicKey;
+    private JavaCripto javaCripto;
+
 
 
     public ChatClient(String serverName, int serverPort)
@@ -29,6 +35,14 @@ public class ChatClient implements Runnable
             // Establishes connection with server (name and port)
             socket = new Socket(serverName, serverPort);
             System.out.println("Connected to server: " + socket);
+
+            this.javaCripto = new JavaCripto();
+
+            KeyPair clientKeyPair = javaCripto.generateKeyPar(2048);
+
+            this.clientPublicKey = clientKeyPair.getPublic();
+            this.clientPrivateKey = clientKeyPair.getPrivate();
+
             start();
         }
         
@@ -42,9 +56,11 @@ public class ChatClient implements Runnable
         {  
             // Other error establishing connection
             System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage()); 
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
         }
-        
-   }
+
+    }
     
    public void run()
    {  
@@ -53,7 +69,9 @@ public class ChatClient implements Runnable
            try
            {  
                // Sends message from console to server
-               streamOut.writeObject(console.readLine());
+               Message newMessage = new Message();
+               newMessage.setSimpleString(console.readLine());
+               streamOut.writeObject(newMessage);
                streamOut.flush();
            }
          
@@ -66,11 +84,21 @@ public class ChatClient implements Runnable
     }
 
 
-    public void handle(Message message){
+    public void handle(Message message) throws IOException {
+
         if (message.isHandShake()){
+
             System.out.println("Handshake from server. Public key received");
             this.serverPublicKey = message.getPublicKey();
             System.out.println(this.serverPublicKey);
+
+            //Aqui tbm posso mandar alguma coisa para o server????
+            //Message handShakeClient = new Message(this.clientPublicKey);
+
+        }
+        else {
+            System.out.println("EVERYBODY ELSE PARA Leitura");
+            System.out.println(message.getSimpleString());
         }
     }
     
@@ -94,6 +122,15 @@ public class ChatClient implements Runnable
     {
         console   = new DataInputStream(System.in);
         streamOut = new ObjectOutputStream(socket.getOutputStream());
+
+        Message newHandShake = new Message(this.clientPublicKey);
+
+        streamOut.writeObject(newHandShake);
+        streamOut.flush();
+
+        if (newHandShake.isHandShake()){
+            System.out.println("EVERYBODY ELSE NO CLIENTE");
+        }
 
         if (thread == null)
         {  
