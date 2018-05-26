@@ -2,12 +2,15 @@
 import utils.JavaCripto;
 import utils.Message;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
 import java.net.*;
 import java.io.*;
 import java.security.*;
+import java.security.cert.CertificateException;
 
-//TODO: Definir chave publica e mandar ao cliente mal é feita uma conexão
-//TODO: Transformar todas as streams de inputs para objects
 //TODO: Gerir o keystore para saber como guardar todas as chaves
 
 
@@ -24,10 +27,14 @@ public class ChatServer implements Runnable
 	private PublicKey clientPublicKey;
 
 	private KeyStore keyStore;
+	char[] keyStorePassword;
+	KeyStore.SecretKeyEntry secretKeyEntry;
+	KeyStore.ProtectionParameter protectionParameter;
+
 
 	private JavaCripto javaCripto = null;
 
-	public ChatServer(int port) {
+	public ChatServer(int port) throws KeyStoreException, CertificateException {
 		try
       		{  
             	// Binds to port and starts server
@@ -45,8 +52,20 @@ public class ChatServer implements Runnable
                 this.serverPublicKey = serverKeyPair.getPublic();
                 this.serverPrivateKey = serverKeyPair.getPrivate();
 
+                this.keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
 
-            	start();
+                /*
+                Teste de keyStore
+                 */
+                this.keyStorePassword = "123abc".toCharArray();
+                protectionParameter = new KeyStore.PasswordProtection(this.keyStorePassword);
+
+				/*try(InputStream keyStoreData = new FileInputStream("keystore.ks")){
+					keyStore.load(keyStoreData, this.keyStorePassword);
+				}*/
+
+				start();
+
         	}
       		catch(IOException ioexception)
       		{  
@@ -105,8 +124,7 @@ public class ChatServer implements Runnable
         	return -1;
     	}
     
-    	public synchronized void handle(int ID, Message message)
-    	{  
+    	public synchronized void handle(int ID, Message message) throws IllegalBlockSizeException, InvalidKeyException, BadPaddingException, NoSuchAlgorithmException, NoSuchPaddingException, KeyStoreException, IOException, CertificateException {
         	/*if (input.equals(".quit"))
             	{  
                 	int leaving_id = findClient(ID);
@@ -124,12 +142,38 @@ public class ChatServer implements Runnable
                 		clients[i].send(ID + ": " + input);   */
 
         	if (message.isHandShake()){
-				System.out.println("Recebeu a key publica do cliente" + message.getPublicKey());
+        		int id = findClient(ID);
+				System.out.println("Recebeu a key publica do cliente " + id + "\n" + message.getPublicKey() );
+
+				/*
+				Create a keystore entry
+				 */
+
+				secretKeyEntry = new KeyStore.SecretKeyEntry((SecretKey) message.getPublicKey());
+
+				keyStore.setEntry(Integer.toString(id), secretKeyEntry, this.protectionParameter);
+
+				/*
+				Store the keystore
+				 */
+
+				try (FileOutputStream keyStoreOutputStream = new FileOutputStream("data/keystore.ks")) {
+					this.keyStore.store(keyStoreOutputStream, keyStorePassword);
+				}
 			}
 			else {
-
 				System.out.println("EVERYBODY ELSE NO SERVIDOR");
-				System.out.println(message.getSimpleString());
+
+				byte[] decryptedMessage = this.javaCripto.decryptMessage(message.getEncryptedDataString(), this.serverPrivateKey);
+				byte[] encriptada = message.getEncryptedDataString();
+
+				String encriptadaString = new String(encriptada);
+
+				String desencriptada = new String(decryptedMessage);
+				System.out.println("AQUI ESTA ELA?  : " + desencriptada);
+				System.out.println("NEXT");
+				System.out.println("AQUI ESTA ELA ECRIPTADA  : " + encriptadaString);
+
 				for (int i = 0; i < clientCount; i++)
 					clients[i].send(message);
 			}
@@ -192,8 +236,7 @@ public class ChatServer implements Runnable
     	}
     
     
-	public static void main(String args[])
-   	{  
+	public static void main(String args[]) throws CertificateException, KeyStoreException {
         	ChatServer server = null;
         
         	if (args.length != 1)
@@ -267,8 +310,22 @@ class ChatServerThread extends Thread
             } catch (ClassNotFoundException e) {
 
                 e.printStackTrace();
-            }
-        }
+            } catch (NoSuchPaddingException e) {
+				e.printStackTrace();
+			} catch (NoSuchAlgorithmException e) {
+				e.printStackTrace();
+			} catch (InvalidKeyException e) {
+				e.printStackTrace();
+			} catch (IllegalBlockSizeException e) {
+				e.printStackTrace();
+			} catch (BadPaddingException e) {
+				e.printStackTrace();
+			} catch (CertificateException e) {
+				e.printStackTrace();
+			} catch (KeyStoreException e) {
+				e.printStackTrace();
+			}
+		}
     }
 
     /**
@@ -282,7 +339,7 @@ class ChatServerThread extends Thread
 
             streamOut.writeObject(message);
             streamOut.flush();
-            System.out.println("Public key enviada para o cliente");
+            System.out.println("Public key enviada para o cliente " + getID());
 
         } catch (IOException e) {
 

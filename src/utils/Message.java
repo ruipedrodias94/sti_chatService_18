@@ -11,8 +11,8 @@ public class Message implements Serializable {
     private PublicKey publicKey;
     private  String simpleString;
 
-    public Message(){
-
+    public Message(byte[] encryptedDataString){
+        this.encryptedDataString = encryptedDataString;
     }
 
     public Message(String simpleString){
@@ -26,6 +26,10 @@ public class Message implements Serializable {
     public Message(PublicKey publicKey){
         this.handShake = true;
         this.publicKey = publicKey;
+    }
+
+    public Message() {
+
     }
 
     public byte[] getEncryptedDataString() {

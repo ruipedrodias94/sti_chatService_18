@@ -2,6 +2,9 @@
 import utils.JavaCripto;
 import utils.Message;
 
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import java.net.*;
 import java.io.*;
 import java.security.*;
@@ -18,7 +21,7 @@ public class ChatClient implements Runnable
     private ChatClientThread client    = null;
 
 
-    private PublicKey serverPublicKey;
+    private PublicKey serverPublicKey = null;
 
     private PrivateKey clientPrivateKey;
     private PublicKey clientPublicKey;
@@ -69,17 +72,31 @@ public class ChatClient implements Runnable
            try
            {  
                // Sends message from console to server
-               Message newMessage = new Message();
-               newMessage.setSimpleString(console.readLine());
+               Message newMessage;
+               String stringToEncrypt = console.readLine();
+
+               //Encrypt the data and send them in a message object
+               byte[] dataToEncrypt = this.javaCripto.encryptMessage(stringToEncrypt.getBytes(), this.serverPublicKey);
+               newMessage = new Message(dataToEncrypt);
                streamOut.writeObject(newMessage);
                streamOut.flush();
            }
          
-           catch(IOException ioexception)
-           {  
+           catch(IOException ioexception) {
                System.out.println("Error sending string to server: " + ioexception.getMessage());
                stop();
+           } catch (NoSuchPaddingException e) {
+               e.printStackTrace();
+           } catch (NoSuchAlgorithmException e) {
+               e.printStackTrace();
+           } catch (InvalidKeyException e) {
+               e.printStackTrace();
+           } catch (IllegalBlockSizeException e) {
+               e.printStackTrace();
+           } catch (BadPaddingException e) {
+               e.printStackTrace();
            }
+
        }
     }
 
@@ -91,12 +108,9 @@ public class ChatClient implements Runnable
             System.out.println("Handshake from server. Public key received");
             this.serverPublicKey = message.getPublicKey();
             System.out.println(this.serverPublicKey);
-
-            //Aqui tbm posso mandar alguma coisa para o server????
-            //Message handShakeClient = new Message(this.clientPublicKey);
-
         }
         else {
+
             System.out.println("EVERYBODY ELSE PARA Leitura");
             System.out.println(message.getSimpleString());
         }
@@ -129,7 +143,7 @@ public class ChatClient implements Runnable
         streamOut.flush();
 
         if (newHandShake.isHandShake()){
-            System.out.println("EVERYBODY ELSE NO CLIENTE");
+            System.out.println("The client made an handshake!");
         }
 
         if (thread == null)
