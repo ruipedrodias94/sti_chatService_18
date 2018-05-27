@@ -1,18 +1,37 @@
 
+import utils.JavaCripto;
+import utils.Message;
+
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import java.net.*;
 import java.io.*;
+import java.security.*;
 
+
+//TODO: Transformar todas as streams de inputs para objects
 
 public class ChatClient implements Runnable
 {
     private Socket socket              = null;
     private Thread thread              = null;
-    private DataInputStream  console   = null;
-    private DataOutputStream streamOut = null;
+    private DataInputStream console = null;
+    private ObjectOutputStream streamOut = null;
     private ChatClientThread client    = null;
 
-    public ChatClient(String serverName, int serverPort)
-    {
+
+
+    private PublicKey serverPublicKey;
+
+    private KeyPair clientKeyPair;
+
+    private JavaCripto javaCripto;
+
+
+
+    public ChatClient(String serverName, int serverPort) throws NoSuchPaddingException, NoSuchProviderException {
+
         System.out.println("Establishing connection to server...");
 
         try
@@ -20,6 +39,11 @@ public class ChatClient implements Runnable
             // Establishes connection with server (name and port)
             socket = new Socket(serverName, serverPort);
             System.out.println("Connected to server: " + socket);
+
+            this.javaCripto = new JavaCripto();
+
+            this.clientKeyPair = javaCripto.generateKeyPair();
+
             start();
         }
 
@@ -32,50 +56,89 @@ public class ChatClient implements Runnable
         catch(IOException ioexception)
         {
             // Other error establishing connection
-            System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage());
+
+            System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage()); 
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
         }
 
     }
+    
+   public void run()
+   {  
+       while (thread != null)
+       {  
+           try
+           {  
+               // Sends message from console to server
+               Message newMessage;
+               String stringToEncrypt = console.readLine();
 
-    public void run()
-    {
-        while (thread != null)
-        {
-            try
-            {
-                // Sends message from console to server
-                streamOut.writeUTF(console.readLine());
-                streamOut.flush();
-            }
+               //Encrypt the data and send them in a message object
+               byte[] dataToEncrypt = this.javaCripto.encrypt(clientKeyPair.getPrivate(), stringToEncrypt);
 
-            catch(IOException ioexception)
-            {
-                System.out.println("Error sending string to server: " + ioexception.getMessage());
-                stop();
-            }
-        }
+               newMessage = new Message(dataToEncrypt);
+
+               streamOut.writeObject(newMessage);
+               streamOut.flush();
+           }
+         
+           catch(Exception ioexception) {
+               System.out.println("Error sending string to server: " + ioexception.getMessage());
+               stop();
+           }
+       }
     }
 
 
-    public void handle(String msg)
-    {
+    public void handle(Message message) throws Exception {
+
+        if (message.isHandShake()){
+
+            System.out.println("Handshake from server. Public key received");
+            System.out.println(message.getPublicKey());
+            this.serverPublicKey = message.getPublicKey();
+
+        }
+        else {
+
+            byte[] decryptedMessage = this.javaCripto.decrypt(serverPublicKey, message.getEncryptedDataByte());
+
+            System.out.println(new String(decryptedMessage));
+        }
+    }
+    
+    /*public void handle(String msg)
+    {  
         // Receives message from server
-        if (msg.equals(".quit"))
-        {
+        if ( msg.equals(".quit"))
+        {  
             // Leaving, quit command
             System.out.println("Exiting...Please press RETURN to exit ...");
             stop();
         }
         else
             // else, writes message received from server to console
+            System.out.println("Recebe alguma coisa?");
             System.out.println(msg);
-    }
 
+    }*/
+    
     // Inits new client thread
     public void start() throws IOException
     {
         console   = new DataInputStream(System.in);
-        streamOut = new DataOutputStream(socket.getOutputStream());
+        streamOut = new ObjectOutputStream(socket.getOutputStream());
+
+        Message newHandShake = new Message(this.clientKeyPair.getPublic());
+
+        streamOut.writeObject(newHandShake);
+        streamOut.flush();
+
+        if (newHandShake.isHandShake()){
+            System.out.println("The client made an handshake!");
+        }
+
         if (thread == null)
         {
             client = new ChatClientThread(this, socket);
@@ -102,13 +165,14 @@ public class ChatClient implements Runnable
         catch(IOException ioe)
         {
             System.out.println("Error closing thread..."); }
-        client.close();
-        client.stop();
-    }
 
+            client.close();  
+            client.stop();
+        }
+   
+    
+    public static void main(String args[]) throws NoSuchPaddingException, NoSuchProviderException {
 
-    public static void main(String args[])
-    {
         ChatClient client = null;
         if (args.length != 2)
             // Displays correct usage syntax on stdout
@@ -125,7 +189,7 @@ class ChatClientThread extends Thread
 {
     private Socket           socket   = null;
     private ChatClient       client   = null;
-    private DataInputStream  streamIn = null;
+    private ObjectInputStream  streamIn = null;
 
     public ChatClientThread(ChatClient _client, Socket _socket)
     {
@@ -138,8 +202,10 @@ class ChatClientThread extends Thread
     public void open()
     {
         try
-        {
-            streamIn  = new DataInputStream(socket.getInputStream());
+
+        {  
+            streamIn  = new ObjectInputStream(socket.getInputStream());
+
         }
         catch(IOException ioe)
         {
@@ -165,14 +231,17 @@ class ChatClientThread extends Thread
     {
         while (true)
         {   try
-        {
-            client.handle(streamIn.readUTF());
-        }
-        catch(IOException ioe)
-        {
-            System.out.println("Listening error: " + ioe.getMessage());
-            client.stop();
-        }
+
+            {
+                client.handle((Message) streamIn.readObject());
+            }
+            catch(Exception ioe)
+            {  
+                System.out.println("Listening error: " + ioe.getMessage());
+                client.stop();
+
+            }
+
         }
     }
 }
