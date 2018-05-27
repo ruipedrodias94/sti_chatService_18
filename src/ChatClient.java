@@ -21,16 +21,15 @@ public class ChatClient implements Runnable
     private ChatClientThread client    = null;
 
 
-    private PublicKey serverPublicKey = null;
+    private PublicKey serverPublicKey;
 
-    private PrivateKey clientPrivateKey;
-    private PublicKey clientPublicKey;
+    private KeyPair clientKeyPair;
+
     private JavaCripto javaCripto;
 
 
 
-    public ChatClient(String serverName, int serverPort)
-    {  
+    public ChatClient(String serverName, int serverPort) throws NoSuchPaddingException, NoSuchProviderException {
         System.out.println("Establishing connection to server...");
         
         try
@@ -41,10 +40,7 @@ public class ChatClient implements Runnable
 
             this.javaCripto = new JavaCripto();
 
-            KeyPair clientKeyPair = javaCripto.generateKeyPar(2048);
-
-            this.clientPublicKey = clientKeyPair.getPublic();
-            this.clientPrivateKey = clientKeyPair.getPrivate();
+            this.clientKeyPair = javaCripto.generateKeyPair();
 
             start();
         }
@@ -76,43 +72,36 @@ public class ChatClient implements Runnable
                String stringToEncrypt = console.readLine();
 
                //Encrypt the data and send them in a message object
-               byte[] dataToEncrypt = this.javaCripto.encryptMessage(stringToEncrypt.getBytes(), this.serverPublicKey);
+               byte[] dataToEncrypt = this.javaCripto.encrypt(clientKeyPair.getPrivate(), stringToEncrypt);
+
                newMessage = new Message(dataToEncrypt);
+
                streamOut.writeObject(newMessage);
                streamOut.flush();
            }
          
-           catch(IOException ioexception) {
+           catch(Exception ioexception) {
                System.out.println("Error sending string to server: " + ioexception.getMessage());
                stop();
-           } catch (NoSuchPaddingException e) {
-               e.printStackTrace();
-           } catch (NoSuchAlgorithmException e) {
-               e.printStackTrace();
-           } catch (InvalidKeyException e) {
-               e.printStackTrace();
-           } catch (IllegalBlockSizeException e) {
-               e.printStackTrace();
-           } catch (BadPaddingException e) {
-               e.printStackTrace();
            }
-
        }
     }
 
 
-    public void handle(Message message) throws IOException {
+    public void handle(Message message) throws Exception {
 
         if (message.isHandShake()){
 
             System.out.println("Handshake from server. Public key received");
+            System.out.println(message.getPublicKey());
             this.serverPublicKey = message.getPublicKey();
-            System.out.println(this.serverPublicKey);
+
         }
         else {
 
-            System.out.println("EVERYBODY ELSE PARA Leitura");
-            System.out.println(message.getSimpleString());
+            byte[] decryptedMessage = this.javaCripto.decrypt(serverPublicKey, message.getEncryptedDataByte());
+
+            System.out.println(new String(decryptedMessage));
         }
     }
     
@@ -137,7 +126,7 @@ public class ChatClient implements Runnable
         console   = new DataInputStream(System.in);
         streamOut = new ObjectOutputStream(socket.getOutputStream());
 
-        Message newHandShake = new Message(this.clientPublicKey);
+        Message newHandShake = new Message(this.clientKeyPair.getPublic());
 
         streamOut.writeObject(newHandShake);
         streamOut.flush();
@@ -177,8 +166,7 @@ public class ChatClient implements Runnable
         }
    
     
-    public static void main(String args[])
-    {  
+    public static void main(String args[]) throws NoSuchPaddingException, NoSuchProviderException {
         ChatClient client = null;
         if (args.length != 2)
             // Displays correct usage syntax on stdout
@@ -237,15 +225,12 @@ class ChatClientThread extends Thread
             {
                 client.handle((Message) streamIn.readObject());
             }
-            catch(IOException ioe)
+            catch(Exception ioe)
             {  
                 System.out.println("Listening error: " + ioe.getMessage());
                 client.stop();
 
-            } catch (ClassNotFoundException e) {
-
-            e.printStackTrace();
-        }
+            }
         }
     }
 }

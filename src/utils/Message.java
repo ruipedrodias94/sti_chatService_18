@@ -5,7 +5,6 @@ import java.security.*;
 
 public class Message implements Serializable {
 
-    //TODO: Add to signatures too
     private byte[] encryptedDataString;
     private boolean handShake;
     private PublicKey publicKey;
@@ -32,7 +31,7 @@ public class Message implements Serializable {
 
     }
 
-    public byte[] getEncryptedDataString() {
+    public byte[] getEncryptedDataByte() {
         return encryptedDataString;
     }
 
