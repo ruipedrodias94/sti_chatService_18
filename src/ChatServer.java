@@ -10,6 +10,7 @@ import java.util.ArrayList;
 
 
 public class ChatServer implements Runnable
+
 {  
 	private ChatServerThread clients[] = new ChatServerThread[20];
 	private ServerSocket server_socket = null;
@@ -228,62 +229,67 @@ public class ChatServer implements Runnable
             		server = new ChatServer(Integer.parseInt(args[0]));
     	}
 
+
 }
 
 class ChatServerThread extends Thread
-{  
+{
     private ChatServer       server    = null;
     private Socket           socket    = null;
     private int              ID        = -1;
     private ObjectInputStream  streamIn  =  null;
     private ObjectOutputStream streamOut = null;
 
-   
+
     public ChatServerThread(ChatServer _server, Socket _socket)
-    {  
+    {
         super();
         server = _server;
         socket = _socket;
         ID     = socket.getPort();
     }
-    
+
     // Sends message to client
+
     public void send(Message msg)
     {   
         try
         {  
             streamOut.writeObject(msg);
+
             streamOut.flush();
         }
-       
+
         catch(IOException ioexception)
-        {  
+        {
             System.out.println(ID + " ERROR sending message: " + ioexception.getMessage());
             server.remove(ID);
             stop();
         }
     }
-    
+
     // Gets id for client
     public int getID()
-    {  
+    {
         return ID;
     }
-   
+
     // Runs thread
     public void run()
-    {  
+    {
         System.out.println("Server Thread " + ID + " running.");
-      
+
         while (true)
-        {  
+        {
             try
+
             {  
                 server.handle(ID, (Message) streamIn.readObject());
             }
          
             catch(Exception ioe)
             {  
+
                 System.out.println(ID + " ERROR reading: " + ioe.getMessage());
                 server.remove(ID);
                 stop();
@@ -310,25 +316,27 @@ class ChatServerThread extends Thread
             e.printStackTrace();
         }
     }
-    
-    
+
+
     // Opens thread
     public void open() throws IOException
+
     {  
         streamIn = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
                 //new DataInputStream(new BufferedInputStream(socket.getInputStream()));
         streamOut = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
                 //new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+
     }
-    
+
     // Closes thread
     public void close() throws IOException
-    {  
+    {
         if (socket != null)    socket.close();
         if (streamIn != null)  streamIn.close();
         if (streamOut != null) streamOut.close();
     }
-    
+
 }
 
 class ObjectPublicKey{

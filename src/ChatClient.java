@@ -13,12 +13,13 @@ import java.security.*;
 //TODO: Transformar todas as streams de inputs para objects
 
 public class ChatClient implements Runnable
-{  
+{
     private Socket socket              = null;
     private Thread thread              = null;
     private DataInputStream console = null;
     private ObjectOutputStream streamOut = null;
     private ChatClientThread client    = null;
+
 
 
     private PublicKey serverPublicKey;
@@ -30,8 +31,9 @@ public class ChatClient implements Runnable
 
 
     public ChatClient(String serverName, int serverPort) throws NoSuchPaddingException, NoSuchProviderException {
+
         System.out.println("Establishing connection to server...");
-        
+
         try
         {
             // Establishes connection with server (name and port)
@@ -44,16 +46,17 @@ public class ChatClient implements Runnable
 
             start();
         }
-        
+
         catch(UnknownHostException uhe)
-        {  
+        {
             // Host unkwnown
-            System.out.println("Error establishing connection - host unknown: " + uhe.getMessage()); 
+            System.out.println("Error establishing connection - host unknown: " + uhe.getMessage());
         }
-      
+
         catch(IOException ioexception)
-        {  
+        {
             // Other error establishing connection
+
             System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage()); 
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
@@ -118,6 +121,7 @@ public class ChatClient implements Runnable
             // else, writes message received from server to console
             System.out.println("Recebe alguma coisa?");
             System.out.println(msg);
+
     }*/
     
     // Inits new client thread
@@ -136,37 +140,39 @@ public class ChatClient implements Runnable
         }
 
         if (thread == null)
-        {  
+        {
             client = new ChatClientThread(this, socket);
-            thread = new Thread(this);                   
+            thread = new Thread(this);
             thread.start();
         }
     }
-    
+
     // Stops client thread
     public void stop()
-    {  
+    {
         if (thread != null)
-        {  
-            thread.stop();  
+        {
+            thread.stop();
             thread = null;
         }
         try
-        {  
+        {
             if (console   != null)  console.close();
             if (streamOut != null)  streamOut.close();
             if (socket    != null)  socket.close();
         }
-      
+
         catch(IOException ioe)
-        {  
+        {
             System.out.println("Error closing thread..."); }
+
             client.close();  
             client.stop();
         }
    
     
     public static void main(String args[]) throws NoSuchPaddingException, NoSuchProviderException {
+
         ChatClient client = null;
         if (args.length != 2)
             // Displays correct usage syntax on stdout
@@ -174,54 +180,58 @@ public class ChatClient implements Runnable
         else
             // Calls new client
             client = new ChatClient(args[0], Integer.parseInt(args[1]));
+        System.out.println("Teste");
     }
-    
+
 }
 
 class ChatClientThread extends Thread
-{  
+{
     private Socket           socket   = null;
     private ChatClient       client   = null;
     private ObjectInputStream  streamIn = null;
 
     public ChatClientThread(ChatClient _client, Socket _socket)
-    {  
+    {
         client   = _client;
         socket   = _socket;
-        open();  
+        open();
         start();
     }
-   
+
     public void open()
-    {  
+    {
         try
+
         {  
             streamIn  = new ObjectInputStream(socket.getInputStream());
+
         }
         catch(IOException ioe)
-        {  
+        {
             System.out.println("Error getting input stream: " + ioe);
             client.stop();
         }
     }
-    
+
     public void close()
-    {  
+    {
         try
-        {  
+        {
             if (streamIn != null) streamIn.close();
         }
-      
+
         catch(IOException ioe)
-        {  
+        {
             System.out.println("Error closing input stream: " + ioe);
         }
     }
-    
+
     public void run()
-    {  
+    {
         while (true)
         {   try
+
             {
                 client.handle((Message) streamIn.readObject());
             }
@@ -231,7 +241,9 @@ class ChatClientThread extends Thread
                 client.stop();
 
             }
+
         }
     }
 }
+
 
