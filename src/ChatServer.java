@@ -1,6 +1,10 @@
 
+import javax.net.ssl.TrustManagerFactory;
 import java.net.*;
 import java.io.*;
+import java.security.*;
+import java.security.cert.CertificateException;
+import java.util.Scanner;
 
 
 public class ChatServer implements Runnable
@@ -9,6 +13,13 @@ public class ChatServer implements Runnable
 	private ServerSocket server_socket = null;
 	private Thread thread = null;
 	private int clientCount = 0;
+
+	private static String aliasPub = null;
+
+	private static Signature mySignature = null;
+	private static KeyStore myKeystore = null;
+	private static KeyStore[] clientKeysArray = null;
+
 
 	public ChatServer(int port)
     	{  
@@ -144,98 +155,135 @@ public class ChatServer implements Runnable
     	}
     
     
-	public static void main(String args[])
-   	{  
-        	ChatServer server = null;
-        
-        	if (args.length != 1)
-            		// Displays correct usage for server
-            		System.out.println("Usage: java ChatServer port");
-        	else
-            		// Calls new server
-            		server = new ChatServer(Integer.parseInt(args[0]));
-    	}
+	public static void main(String args[]) throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, InvalidKeyException, UnrecoverableEntryException {
+		String input;
+		ChatServer server = null;
+		Scanner sc = new Scanner(System.in);
+
+		if (args.length < 3)
+			// Displays correct usage for server
+			System.out.println("Usage: java ChatServer port (crtclient passclient)*");
+		else {
+
+			// Calls new server
+			myKeystore = KeyStore.getInstance("JKS");
+
+			System.out.println("Enter the password of the keystore:");
+			input = sc.nextLine();
+			char[] keystorePass = input.toCharArray();
+
+			aliasPub = "serverpub";
+
+			//load the key store from file system
+			FileInputStream fileInputStream = new FileInputStream("plainserver.jks");
+			myKeystore.load(fileInputStream, keystorePass);
+			fileInputStream.close();
+
+			//read the private key
+			KeyStore.ProtectionParameter keyPass = new KeyStore.PasswordProtection(keystorePass);
+			KeyStore.PrivateKeyEntry privKeyEntry = (KeyStore.PrivateKeyEntry) myKeystore.getEntry("plainserverkeys", keyPass);
+			PrivateKey privateKey = privKeyEntry.getPrivateKey();
+
+			//initialize the signature with signature algorithm and private key
+			mySignature = Signature.getInstance("SHA256withRSA");
+			mySignature.initSign(privateKey);
+
+			clientKeysArray = new KeyStore[(int) ((args.length - 1) / 2)];
+			TrustManagerFactory trustManager = null;
+
+			for (int i = 1, j = 0; i < args.length; i += 2, ++j) {
+				keystorePass = args[i + 1].toCharArray();
+				clientKeysArray[j] = KeyStore.getInstance("JKS");
+				clientKeysArray[j].load(new FileInputStream(args[i]), keystorePass);
+				trustManager = TrustManagerFactory.getInstance("SunX509");
+				trustManager.init(clientKeysArray[j]);
+			}
+
+			server = new ChatServer(Integer.parseInt(args[0]));
+
+		}
+	}
 
 }
 
 class ChatServerThread extends Thread
-{  
+{
     private ChatServer       server    = null;
     private Socket           socket    = null;
     private int              ID        = -1;
     private DataInputStream  streamIn  =  null;
     private DataOutputStream streamOut = null;
 
-   
+
     public ChatServerThread(ChatServer _server, Socket _socket)
-    {  
+    {
         super();
         server = _server;
         socket = _socket;
         ID     = socket.getPort();
     }
-    
+
     // Sends message to client
     public void send(String msg)
-    {   
+    {
         try
-        {  
+        {
             streamOut.writeUTF(msg);
             streamOut.flush();
         }
-       
+
         catch(IOException ioexception)
-        {  
+        {
             System.out.println(ID + " ERROR sending message: " + ioexception.getMessage());
             server.remove(ID);
             stop();
         }
     }
-    
+
     // Gets id for client
     public int getID()
-    {  
+    {
         return ID;
     }
-   
+
     // Runs thread
     public void run()
-    {  
+    {
         System.out.println("Server Thread " + ID + " running.");
-      
+
         while (true)
-        {  
+        {
             try
-            {  
+            {
                 server.handle(ID, streamIn.readUTF());
             }
-         
+
             catch(IOException ioe)
-            {  
+            {
                 System.out.println(ID + " ERROR reading: " + ioe.getMessage());
                 server.remove(ID);
                 stop();
             }
         }
     }
-    
-    
+
+
     // Opens thread
     public void open() throws IOException
-    {  
-        streamIn = new DataInputStream(new 
+    {
+        streamIn = new DataInputStream(new
                         BufferedInputStream(socket.getInputStream()));
         streamOut = new DataOutputStream(new
                         BufferedOutputStream(socket.getOutputStream()));
     }
-    
+
     // Closes thread
     public void close() throws IOException
-    {  
+    {
         if (socket != null)    socket.close();
         if (streamIn != null)  streamIn.close();
         if (streamOut != null) streamOut.close();
     }
-    
+
 }
 

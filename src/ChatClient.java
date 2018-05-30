@@ -1,15 +1,23 @@
 
+import javax.net.ssl.TrustManagerFactory;
 import java.net.*;
 import java.io.*;
+import java.security.*;
+import java.security.cert.CertificateException;
+import java.util.Scanner;
 
 
 public class ChatClient implements Runnable
 {  
-    private Socket socket              = null;
-    private Thread thread              = null;
-    private DataInputStream  console   = null;
-    private DataOutputStream streamOut = null;
-    private ChatClientThread client    = null;
+    private Socket socket                   = null;
+    private Thread thread                   = null;
+    private DataInputStream  console        = null;
+    private DataOutputStream streamOut      = null;
+    private ChatClientThread client         = null;
+    private static Signature mySignature    = null;
+    private static KeyStore myKeystore      = null;
+    private static KeyStore keyServer       = null;
+    private static String publicAlias       = null;
 
     public ChatClient(String serverName, int serverPort)
     {  
@@ -107,14 +115,43 @@ public class ChatClient implements Runnable
         }
    
     
-    public static void main(String args[])
-    {  
+    public static void main(String args[]) throws IOException, NoSuchAlgorithmException, KeyStoreException, CertificateException, InvalidKeyException, UnrecoverableEntryException {
+        String input;
         ChatClient client = null;
-        if (args.length != 2)
+        Scanner sc = new Scanner(System.in);
+
+        if (args.length != 6)
             // Displays correct usage syntax on stdout
-            System.out.println("Usage: java ChatClient host port");
+            System.out.println("Usage: java ChatClient host port clientJksFile clientpub");
         else
-            // Calls new client
+            publicAlias = args[3];
+
+            System.out.println("Enter the password of the keystore:");
+            input = sc.nextLine();
+            char[] keystorePass = input.toCharArray();
+
+            System.out.println("Enter the server's password:");
+            input = sc.nextLine();
+            char[] serverPassword = input.toCharArray();
+
+            myKeystore = KeyStore.getInstance("JKS");
+            FileInputStream fileInputStream = new FileInputStream(args[2]);
+            myKeystore.load(fileInputStream, keystorePass);
+            fileInputStream.close();
+
+            KeyStore.ProtectionParameter keyPass = new KeyStore.PasswordProtection(keystorePass);
+            KeyStore.PrivateKeyEntry privKeyEntry = (KeyStore.PrivateKeyEntry) myKeystore.getEntry("plainclientkeys", keyPass);
+            PrivateKey privateKey = privKeyEntry.getPrivateKey();
+
+            mySignature = Signature.getInstance("SHA256withRSA");
+            mySignature.initSign(privateKey);
+
+            keyServer = KeyStore.getInstance("JKS");
+            keyServer.load(new FileInputStream("serverpub.jks"), serverPassword);
+
+            TrustManagerFactory trustManager = TrustManagerFactory.getInstance("SunX509");
+            trustManager.init(keyServer);
+
             client = new ChatClient(args[0], Integer.parseInt(args[1]));
     }
     
