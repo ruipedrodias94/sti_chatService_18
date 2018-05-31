@@ -5,6 +5,7 @@ import javax.net.ssl.TrustManagerFactory;
 import java.net.*;
 import java.io.*;
 import java.security.*;
+import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.util.Scanner;
 import java.util.Timer;
@@ -16,7 +17,7 @@ public class ChatClient implements Runnable
     private SSLSocket socket                               = null;
     private Thread thread                               = null;
     private DataInputStream  console                    = null;
-    private DataOutputStream streamOut                  = null;
+    private ObjectOutputStream streamOut                  = null;
     private ChatClientThread client                     = null;
     private static Signature clientSignature            = null;
     private static KeyStore clientKeystore              = null;
@@ -28,6 +29,7 @@ public class ChatClient implements Runnable
     private static char[] clientPass;
     private static char[] serverPassword;
     private int period = 25000; //ms
+    Message sendMessage;
 
     public ChatClient(String serverName, int serverPort)
     {  
@@ -62,12 +64,18 @@ public class ChatClient implements Runnable
    {
        Timer taskTimer = new Timer();
        taskTimer.schedule(new ChatClientThread.RemindTask(socket), 0, period);
+       byte[] messagePacket = null;
+       Message sendMessage;
        while (thread != null)
        {  
            try
-           {  
-               // Sends message from console to server
-               streamOut.writeUTF(console.readLine());
+           {
+               messagePacket = console.readLine().getBytes("UTF-8");
+               clientSignature.update(messagePacket);
+
+               sendMessage = new Message(messagePacket, clientSignature.sign(), publicAlias);
+
+               streamOut.writeObject(sendMessage);
                streamOut.flush();
            }
          
@@ -75,30 +83,53 @@ public class ChatClient implements Runnable
            {  
                System.out.println("Error sending string to server: " + ioexception.getMessage());
                stop();
+           } catch (SignatureException e) {
+               e.printStackTrace();
            }
        }
     }
-    
-    
-    public void handle(String msg)
-    {  
+
+
+    public void handle(Message _message) throws KeyStoreException, NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+        byte[] receivedMessage      = _message.getMessage();
+        boolean checked;
+        Certificate cert;
+        Signature verification;
+
+        checked = false;
+        cert = serverKeystore.getCertificate(_message.getalias());
+        verification = Signature.getInstance("SHA256withRSA");
+        verification.initVerify(cert);
+        verification.update(receivedMessage);
+        checked = verification.verify(_message.getMessageSign());
+
+        String finalMessage = null;
+
+        if(checked)
+            finalMessage = new String(receivedMessage);
+        else {
+            System.out.println("The message was not verified.");
+            System.exit(0);
+        }
+
+
         // Receives message from server
-        if (msg.equals(".quit"))
-        {  
+        if (finalMessage.equals(".quit"))
+        {
             // Leaving, quit command
             System.out.println("Exiting...Please press RETURN to exit ...");
             stop();
         }
         else
             // else, writes message received from server to console
-            System.out.println(msg);
+            System.out.println(finalMessage);
     }
     
     // Inits new client thread
     public void start() throws IOException
     {  
         console   = new DataInputStream(System.in);
-        streamOut = new DataOutputStream(socket.getOutputStream());
+        streamOut = new ObjectOutputStream(socket.getOutputStream());
         if (thread == null)
         {  
             client = new ChatClientThread(this, socket);
@@ -227,7 +258,17 @@ class ChatClientThread extends Thread
             {  
                 System.out.println("Listening error: " + ioe.getMessage());
                 client.stop();
-            }
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
+            } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        } catch (KeyStoreException e) {
+            e.printStackTrace();
+        } catch (SignatureException e) {
+            e.printStackTrace();
+        } catch (InvalidKeyException e) {
+            e.printStackTrace();
+        }
         }
     }
 
