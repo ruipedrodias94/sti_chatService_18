@@ -1,23 +1,33 @@
 
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
 import java.net.*;
 import java.io.*;
 import java.security.*;
 import java.security.cert.CertificateException;
 import java.util.Scanner;
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 public class ChatClient implements Runnable
 {  
-    private Socket socket                   = null;
-    private Thread thread                   = null;
-    private DataInputStream  console        = null;
-    private DataOutputStream streamOut      = null;
-    private ChatClientThread client         = null;
-    private static Signature mySignature    = null;
-    private static KeyStore myKeystore      = null;
-    private static KeyStore keyServer       = null;
-    private static String publicAlias       = null;
+    private SSLSocket socket                               = null;
+    private Thread thread                               = null;
+    private DataInputStream  console                    = null;
+    private DataOutputStream streamOut                  = null;
+    private ChatClientThread client                     = null;
+    private static Signature clientSignature            = null;
+    private static KeyStore clientKeystore              = null;
+    private static KeyStore serverKeystore              = null;
+    private static String publicAlias                   = null;
+    private static KeyStore.PrivateKeyEntry accessPrivate;
+    private static TrustManagerFactory trustMaterial;
+    private static SSLSocketFactory SSLfactory;
+    private static char[] clientPass;
+    private static char[] serverPassword;
+    private int period = 25000; //ms
 
     public ChatClient(String serverName, int serverPort)
     {  
@@ -25,8 +35,11 @@ public class ChatClient implements Runnable
         
         try
         {
-            // Establishes connection with server (name and port)
-            socket = new Socket(serverName, serverPort);
+            // Establishes SSL connection with server (name and port)
+            SSLfactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+            socket = (SSLSocket) SSLfactory.createSocket(serverName, serverPort);
+            socket.setEnabledCipherSuites(SSLfactory.getSupportedCipherSuites());
+
             System.out.println("Connected to server: " + socket);
             start();
         }
@@ -46,7 +59,9 @@ public class ChatClient implements Runnable
    }
     
    public void run()
-   {  
+   {
+       Timer taskTimer = new Timer();
+       taskTimer.schedule(new ChatClientThread.RemindTask(socket), 0, period);
        while (thread != null)
        {  
            try
@@ -120,37 +135,41 @@ public class ChatClient implements Runnable
         ChatClient client = null;
         Scanner sc = new Scanner(System.in);
 
+
         if (args.length != 6)
             // Displays correct usage syntax on stdout
             System.out.println("Usage: java ChatClient host port clientJksFile clientpub");
         else
             publicAlias = args[3];
 
+            //enter the password of the client keystore
             System.out.println("Enter the password of the keystore:");
             input = sc.nextLine();
-            char[] keystorePass = input.toCharArray();
+            clientPass = input.toCharArray();
 
+            //enter the password of the server keystore
             System.out.println("Enter the server's password:");
             input = sc.nextLine();
-            char[] serverPassword = input.toCharArray();
+            serverPassword = input.toCharArray();
 
-            myKeystore = KeyStore.getInstance("JKS");
-            FileInputStream fileInputStream = new FileInputStream(args[2]);
-            myKeystore.load(fileInputStream, keystorePass);
-            fileInputStream.close();
+            //access the client keystore with client java key and his password
+            clientKeystore = KeyStore.getInstance("JKS");
+            clientKeystore.load(new FileInputStream(args[2]), clientPass);
 
-            KeyStore.ProtectionParameter keyPass = new KeyStore.PasswordProtection(keystorePass);
-            KeyStore.PrivateKeyEntry privKeyEntry = (KeyStore.PrivateKeyEntry) myKeystore.getEntry("plainclientkeys", keyPass);
-            PrivateKey privateKey = privKeyEntry.getPrivateKey();
+            //access the server keystore with server java key and his password
+            serverKeystore = KeyStore.getInstance("JKS");
+            serverKeystore.load(new FileInputStream("serverpub.jks"), serverPassword);
 
-            mySignature = Signature.getInstance("SHA256withRSA");
-            mySignature.initSign(privateKey);
+            //accessing client private key using client password stored in the keystore and his alias
+            accessPrivate = (KeyStore.PrivateKeyEntry) clientKeystore.getEntry("plainclientkeys", new KeyStore.PasswordProtection(clientPass));
 
-            keyServer = KeyStore.getInstance("JKS");
-            keyServer.load(new FileInputStream("serverpub.jks"), serverPassword);
+            //initialize client signature using his privatekey
+            clientSignature = Signature.getInstance("SHA256withRSA");
+            clientSignature.initSign(accessPrivate.getPrivateKey());
 
-            TrustManagerFactory trustManager = TrustManagerFactory.getInstance("SunX509");
-            trustManager.init(keyServer);
+            //integrity
+            trustMaterial = TrustManagerFactory.getInstance("SunX509");
+            trustMaterial.init(serverKeystore);
 
             client = new ChatClient(args[0], Integer.parseInt(args[1]));
     }
@@ -159,11 +178,11 @@ public class ChatClient implements Runnable
 
 class ChatClientThread extends Thread
 {  
-    private Socket           socket   = null;
+    private SSLSocket socket   = null;
     private ChatClient       client   = null;
-    private DataInputStream  streamIn = null;
+    private ObjectInputStream  streamIn = null;
 
-    public ChatClientThread(ChatClient _client, Socket _socket)
+    public ChatClientThread(ChatClient _client, SSLSocket _socket)
     {  
         client   = _client;
         socket   = _socket;
@@ -174,8 +193,8 @@ class ChatClientThread extends Thread
     public void open()
     {  
         try
-        {  
-            streamIn  = new DataInputStream(socket.getInputStream());
+        {
+            streamIn  = new ObjectInputStream(socket.getInputStream());
         }
         catch(IOException ioe)
         {  
@@ -201,8 +220,8 @@ class ChatClientThread extends Thread
     {  
         while (true)
         {   try
-            {  
-                client.handle(streamIn.readUTF());
+            {
+                client.handle((Message)streamIn.readObject());
             }
             catch(IOException ioe)
             {  
@@ -211,5 +230,24 @@ class ChatClientThread extends Thread
             }
         }
     }
+
+    static class RemindTask extends TimerTask {
+
+        SSLSocket socket;
+
+        RemindTask(SSLSocket socket){
+            this.socket = socket;
+        }
+
+        public void run() {
+            System.out.println("[LOG] - New handshake");
+            try{
+                socket.startHandshake();
+            }catch(Exception e){
+                System.out.println("Error starting Handshake: " + e.getMessage());
+            }
+        }
+    }
+
 }
 

@@ -1,6 +1,5 @@
 
-import javax.net.ssl.TrustManagerFactory;
-import java.net.*;
+import javax.net.ssl.*;
 import java.io.*;
 import java.security.*;
 import java.security.cert.CertificateException;
@@ -9,27 +8,37 @@ import java.util.Scanner;
 
 public class ChatServer implements Runnable
 {  
-	private ChatServerThread clients[] = new ChatServerThread[20];
-	private ServerSocket server_socket = null;
-	private Thread thread = null;
-	private int clientCount = 0;
-
-	private static String aliasPub = null;
-
-	private static Signature mySignature = null;
-	private static KeyStore myKeystore = null;
-	private static KeyStore[] clientKeysArray = null;
+	private ChatServerThread clients[] 					= new ChatServerThread[20];
+	private SSLServerSocket server_socket 					= null;
+	private Thread thread 								= null;
+	private int clientCount 							= 0;
+	private static String publicAlias 					= "serverpub";
+	private static Signature serverSignature 			= null;
+	private static KeyStore serverKeystore 				= null;
+	private static KeyStore[] clientKeysArray 			= null;
+	private static TrustManagerFactory trustMaterial 	= null;
+	private static KeyStore.PrivateKeyEntry accessPrivate;
+	private static char[] serverPass;
+	private static SSLServerSocketFactory SSLfactory;
 
 
 	public ChatServer(int port)
     	{  
 		try
-      		{  
-            		// Binds to port and starts server
-			System.out.println("Binding to port " + port);
-            		server_socket = new ServerSocket(port);  
-            		System.out.println("Server started: " + server_socket);
-            		start();
+      		{
+				// Establishes SSL connection with server (name and port)
+				System.out.println("Binding to port " + port);
+				SSLfactory = (SSLServerSocketFactory) SSLServerSocketFactory.getDefault();
+
+				server_socket = (SSLServerSocket) SSLfactory.createServerSocket(port);
+
+				server_socket.setEnabledCipherSuites(SSLfactory.getSupportedCipherSuites());
+
+				System.out.println("Server started: " + server_socket);
+
+
+
+				start();
         	}
       		catch(IOException ioexception)
       		{  
@@ -45,8 +54,8 @@ public class ChatServer implements Runnable
             		try
             		{  
                 		// Adds new thread for new client
-                		System.out.println("Waiting for a client ..."); 
-                		addThread(server_socket.accept()); 
+                		System.out.println("Waiting for a client ...");
+                		addThread((SSLSocket) server_socket.accept());
             		}
             		catch(IOException ioexception)
             		{
@@ -131,7 +140,7 @@ public class ChatServer implements Runnable
         	}
     	}
     
-    	private void addThread(Socket socket)
+    	private void addThread(SSLSocket socket)
     	{  
     	    	if (clientCount < clients.length)
         	{  
@@ -165,38 +174,30 @@ public class ChatServer implements Runnable
 			System.out.println("Usage: java ChatServer port (crtclient passclient)*");
 		else {
 
-			// Calls new server
-			myKeystore = KeyStore.getInstance("JKS");
-
+			//enter the password of the server keystore
 			System.out.println("Enter the password of the keystore:");
 			input = sc.nextLine();
-			char[] keystorePass = input.toCharArray();
+			serverPass = input.toCharArray();
 
-			aliasPub = "serverpub";
+			//access the server keystore with server java key and his password
+			serverKeystore = KeyStore.getInstance("JKS");
+			serverKeystore.load(new FileInputStream("plainserver.jks"), serverPass);
 
-			//load the key store from file system
-			FileInputStream fileInputStream = new FileInputStream("plainserver.jks");
-			myKeystore.load(fileInputStream, keystorePass);
-			fileInputStream.close();
+			//accessing server private key using server password stored in the keystore and his alias
+			accessPrivate = (KeyStore.PrivateKeyEntry) serverKeystore.getEntry("plainserverkeys", new KeyStore.PasswordProtection(serverPass));
 
-			//read the private key
-			KeyStore.ProtectionParameter keyPass = new KeyStore.PasswordProtection(keystorePass);
-			KeyStore.PrivateKeyEntry privKeyEntry = (KeyStore.PrivateKeyEntry) myKeystore.getEntry("plainserverkeys", keyPass);
-			PrivateKey privateKey = privKeyEntry.getPrivateKey();
+			//initialize client signature using its private key
+			serverSignature = Signature.getInstance("SHA256withRSA");
+			serverSignature.initSign(accessPrivate.getPrivateKey());
 
-			//initialize the signature with signature algorithm and private key
-			mySignature = Signature.getInstance("SHA256withRSA");
-			mySignature.initSign(privateKey);
-
+			//access the client keystore with client java key and his password
 			clientKeysArray = new KeyStore[(int) ((args.length - 1) / 2)];
-			TrustManagerFactory trustManager = null;
-
-			for (int i = 1, j = 0; i < args.length; i += 2, ++j) {
-				keystorePass = args[i + 1].toCharArray();
+			for (int i = 1, j = 0; i < args.length; i += 2, j++) {
+				serverPass = args[i + 1].toCharArray();
 				clientKeysArray[j] = KeyStore.getInstance("JKS");
-				clientKeysArray[j].load(new FileInputStream(args[i]), keystorePass);
-				trustManager = TrustManagerFactory.getInstance("SunX509");
-				trustManager.init(clientKeysArray[j]);
+				clientKeysArray[j].load(new FileInputStream(args[i]), serverPass);
+				trustMaterial = TrustManagerFactory.getInstance("SunX509");
+				trustMaterial.init(clientKeysArray[j]);
 			}
 
 			server = new ChatServer(Integer.parseInt(args[0]));
@@ -209,13 +210,13 @@ public class ChatServer implements Runnable
 class ChatServerThread extends Thread
 {
     private ChatServer       server    = null;
-    private Socket           socket    = null;
+    private SSLSocket socket    = null;
     private int              ID        = -1;
-    private DataInputStream  streamIn  =  null;
-    private DataOutputStream streamOut = null;
+    private ObjectInputStream  streamIn  =  null;
+    private ObjectOutputStream streamOut = null;
 
 
-    public ChatServerThread(ChatServer _server, Socket _socket)
+    public ChatServerThread(ChatServer _server, SSLSocket _socket)
     {
         super();
         server = _server;
@@ -271,10 +272,9 @@ class ChatServerThread extends Thread
     // Opens thread
     public void open() throws IOException
     {
-        streamIn = new DataInputStream(new
-                        BufferedInputStream(socket.getInputStream()));
-        streamOut = new DataOutputStream(new
-                        BufferedOutputStream(socket.getOutputStream()));
+        streamIn = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
+        streamOut = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+        //FLUSH?
     }
 
     // Closes thread
