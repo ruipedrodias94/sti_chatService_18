@@ -12,8 +12,8 @@ public class ChatServer implements Runnable
 	private SSLServerSocket server_socket 					= null;
 	private Thread thread 								= null;
 	private int clientCount 							= 0;
-	private static String publicAlias 					= "serverpub";
-	private static Signature serverSignature 			= null;
+	public static String publicAlias 					= "serverpub";
+	public static Signature serverSignature 			= null;
 	private static KeyStore serverKeystore 				= null;
 	private static KeyStore[] clientKeysArray 			= null;
 	private static TrustManagerFactory trustMaterial 	= null;
@@ -93,25 +93,55 @@ public class ChatServer implements Runnable
         	return -1;
     	}
     
-    	public synchronized void handle(int ID, String input)
-    	{  
-        	if (input.equals(".quit"))
-            	{  
-                	int leaving_id = findClient(ID);
-                	// Client exits
-                	clients[leaving_id].send(".quit");
-                	// Notify remaing users
-                	for (int i = 0; i < clientCount; i++)
-                    		if (i!=leaving_id)
-                        		clients[i].send("Client " +ID + " exits..");
-                	remove(ID);
-            	}
-        	else
-            		// Brodcast message for every other client online
-            		for (int i = 0; i < clientCount; i++)
-                		clients[i].send(ID + ": " + input);   
-    	}
-    
+    	public synchronized void handle(int ID, Message _message) throws KeyStoreException, NoSuchAlgorithmException, InvalidKeyException, SignatureException {
+            byte[] receivedMessage = _message.getMessage();
+			boolean checked = false;
+			String finalMessage = null;
+            java.security.cert.Certificate cert = null;
+            Signature verification;
+
+            int j = 0;
+            while(cert == null){
+                cert = clientKeysArray[j].getCertificate("clientpub");
+                j++;
+            }
+
+            verification = Signature.getInstance("SHA256withRSA");
+            verification.initVerify(cert);
+            verification.update(receivedMessage);
+            checked = verification.verify(_message.getMessageSign());
+
+            if (checked) {
+                finalMessage = new String(receivedMessage);
+            } else {
+                int leaving_id = findClient(ID);
+                for (j = 0; j < clientCount; j++)
+                    if (j!=leaving_id)
+                        clients[j].send("Client " +ID + " exits..");
+
+                remove(ID);
+            }
+
+
+
+
+			if (finalMessage.equals(".quit"))
+			{
+				int leaving_id = findClient(ID);
+				// Client exits
+				clients[leaving_id].send(".quit");
+				// Notify remaing users
+				for (int i = 0; i < clientCount; i++)
+					if (i!=leaving_id)
+						clients[i].send("Client " +ID + " exits..");
+				remove(ID);
+			}
+			else
+				// Brodcast message for every other client online
+				for (int i = 0; i < clientCount; i++)
+					clients[i].send(ID + ": " + finalMessage);
+		}
+
     	public synchronized void remove(int ID)
     	{  
         	int pos = findClient(ID);
@@ -227,9 +257,15 @@ class ChatServerThread extends Thread
     // Sends message to client
     public void send(String msg)
     {
+        byte[] messagePacket = null;
+        Message sendMessage;
         try
         {
-            streamOut.writeUTF(msg);
+            messagePacket = msg.getBytes("UTF-8");
+            ChatServer.serverSignature.update(messagePacket);
+            sendMessage = new Message(messagePacket, ChatServer.serverSignature.sign(), ChatServer.publicAlias);
+            streamOut.writeObject(sendMessage);
+
             streamOut.flush();
         }
 
@@ -238,6 +274,8 @@ class ChatServerThread extends Thread
             System.out.println(ID + " ERROR sending message: " + ioexception.getMessage());
             server.remove(ID);
             stop();
+        } catch (SignatureException e) {
+            e.printStackTrace();
         }
     }
 
@@ -256,7 +294,7 @@ class ChatServerThread extends Thread
         {
             try
             {
-                server.handle(ID, streamIn.readUTF());
+                server.handle(ID, (Message)streamIn.readObject());
             }
 
             catch(IOException ioe)
@@ -264,6 +302,16 @@ class ChatServerThread extends Thread
                 System.out.println(ID + " ERROR reading: " + ioe.getMessage());
                 server.remove(ID);
                 stop();
+            } catch (NoSuchAlgorithmException e) {
+                e.printStackTrace();
+            } catch (InvalidKeyException e) {
+                e.printStackTrace();
+            } catch (SignatureException e) {
+                e.printStackTrace();
+            } catch (KeyStoreException e) {
+                e.printStackTrace();
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
             }
         }
     }

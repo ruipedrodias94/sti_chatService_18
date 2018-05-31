@@ -11,6 +11,8 @@ import java.util.Scanner;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import static java.lang.System.console;
+
 
 public class ChatClient implements Runnable
 {  
@@ -26,10 +28,7 @@ public class ChatClient implements Runnable
     private static KeyStore.PrivateKeyEntry accessPrivate;
     private static TrustManagerFactory trustMaterial;
     private static SSLSocketFactory SSLfactory;
-    private static char[] clientPass;
-    private static char[] serverPassword;
     private int period = 25000; //ms
-    Message sendMessage;
 
     public ChatClient(String serverName, int serverPort)
     {  
@@ -173,15 +172,20 @@ public class ChatClient implements Runnable
         else
             publicAlias = args[3];
 
-            //enter the password of the client keystore
+
+            Console console = console();
+            if (console == null) {
+                System.out.println("Couldn't get Console instance");
+                System.exit(0);
+            }
             System.out.println("Enter the password of the keystore:");
-            input = sc.nextLine();
-            clientPass = input.toCharArray();
+            char clientPass[]  = console.readPassword();
+
 
             //enter the password of the server keystore
             System.out.println("Enter the server's password:");
-            input = sc.nextLine();
-            serverPassword = input.toCharArray();
+            char serverPassword[]  = console.readPassword();
+
 
             //access the client keystore with client java key and his password
             clientKeystore = KeyStore.getInstance("JKS");
@@ -281,12 +285,13 @@ class ChatClientThread extends Thread
         }
 
         public void run() {
-            System.out.println("[LOG] - New handshake");
-            try{
+
+            try {
                 socket.startHandshake();
-            }catch(Exception e){
-                System.out.println("Error starting Handshake: " + e.getMessage());
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+
         }
     }
 
