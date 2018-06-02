@@ -2,33 +2,29 @@ package utils;
 
 import javax.crypto.SecretKey;
 import java.io.Serializable;
-import java.security.*;
+import java.security.PublicKey;
 
 public class Message implements Serializable {
 
-    private byte[] encryptedDataString;
-    private boolean handShake;
+    private boolean handShake = false;
+    private boolean isSession = false;
     private PublicKey publicKey;
-    private  String simpleString;
+    private byte[] message;
+    private int id;
 
-    public Message(byte[] encryptedDataString){
-        this.encryptedDataString = encryptedDataString;
-    }
-
-    public Message(String simpleString){
-        this.setSimpleString(simpleString);
-    }
-
-    public Message() {
+    public Message(){
 
     }
 
-    public byte[] getEncryptedDataByte() {
-        return encryptedDataString;
+    public Message(PublicKey publicKey){
+        this.handShake = true;
+        this.publicKey = publicKey;
     }
 
-    public void setEncryptedDataString(byte[] encryptedDataString) {
-        this.encryptedDataString = encryptedDataString;
+    public Message(byte[] message, boolean isSession, int id){
+        this.isSession = isSession;
+        this.message = message;
+        this.id = id;
     }
 
     public boolean isHandShake() {
@@ -39,6 +35,15 @@ public class Message implements Serializable {
         this.handShake = handShake;
     }
 
+    public boolean isSession() {
+        return isSession;
+    }
+
+    public void setSession(boolean session) {
+        isSession = session;
+    }
+
+
     public PublicKey getPublicKey() {
         return publicKey;
     }
@@ -47,11 +52,19 @@ public class Message implements Serializable {
         this.publicKey = publicKey;
     }
 
-    public String getSimpleString() {
-        return simpleString;
+    public byte[] getMessage() {
+        return message;
     }
 
-    public void setSimpleString(String simpleString) {
-        this.simpleString = simpleString;
+    public void setMessage(byte[] message) {
+        this.message = message;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
     }
 }

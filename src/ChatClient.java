@@ -9,8 +9,7 @@ import javax.crypto.SecretKey;
 import java.net.*;
 import java.io.*;
 import java.security.*;
-import java.security.cert.CertificateException;
-import java.util.Scanner;
+import java.util.Base64;
 
 
 //TODO: Transformar todas as streams de inputs para objects
@@ -24,15 +23,15 @@ public class ChatClient implements Runnable
     private ChatClientThread client    = null;
 
 
+    //KEYS
+    private PublicKey serverPublicKey;
+    private static SecretKey sessionKey;
 
-    private SecretKey secretKey;
-    private JavaCripto javaCripto = null;
-    private KeyStore keyStore;
-    private KeyStore.SecretKeyEntry secretKeyEntry;
+    private static JavaCripto javaCripto;
 
 
-    public ChatClient(String serverName, int serverPort) throws KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableEntryException {
 
+    public ChatClient(String serverName, int serverPort) throws Exception {
         System.out.println("Establishing connection to server...");
 
         try
@@ -42,22 +41,7 @@ public class ChatClient implements Runnable
             System.out.println("Connected to server: " + socket);
 
             javaCripto = new JavaCripto();
-
-            //GETTING THE PASS TO KEYSTORE
-            System.out.println("Enter the password to access the keystore: ");
-            //Scanner sc = new Scanner(System.in);
-            String input = "mypass";
-            char[] serverPass = input.toCharArray();
-
-            //LOGIN TO KEYSTORE
-            keyStore = KeyStore.getInstance("jceks");
-            keyStore.load(new FileInputStream("keystore.jks"), serverPass);
-
-            //ACCESS THE SECRETKEY
-            secretKeyEntry = (KeyStore.SecretKeyEntry) keyStore.getEntry("secretKey", new KeyStore.PasswordProtection(serverPass));
-            secretKey = secretKeyEntry.getSecretKey();
-
-            System.out.println("Logado com sucesso!");
+            sessionKey = javaCripto.generateSecretKey();
 
             start();
         }
@@ -71,53 +55,73 @@ public class ChatClient implements Runnable
         catch(IOException ioexception)
         {
             // Other error establishing connection
-
-            System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage()); 
+            System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage());
         }
 
     }
-    
-   public void run()
-   {  
-       while (thread != null)
-       {  
-           try
-           {  
-               // Sends message from console to server
-               Message newMessage;
-               String stringToEncrypt = console.readLine();
 
-               //ENCRYPT THE DATA COMMING FROM COMAND LINE
-               System.out.println(stringToEncrypt);
+    public void run()
+    {
+        while (thread != null)
+        {
+            try
+            {
+                // Sends message from console to server
+                Message newMessage;
+                String stringToEncrypt = console.readLine();
 
-               byte[] dataToEncrypt = javaCripto.encrypt(secretKey, stringToEncrypt);
+                //Encrypt the data and send them in a message object
+                byte[] dataToEncrypt = javaCripto.encryptMessage(sessionKey, stringToEncrypt.getBytes());
 
-               newMessage = new Message(dataToEncrypt);
+                newMessage = new Message(dataToEncrypt, false, -1);
 
-               streamOut.writeObject(newMessage);
-               streamOut.flush();
-           }
-         
-           catch(Exception ioexception) {
-               System.out.println("Error sending string to server: " + ioexception.getMessage());
-               stop();
-           }
-       }
+                streamOut.writeObject(newMessage);
+                streamOut.flush();
+
+            }
+
+            catch(Exception ioexception) {
+                System.out.println("Error sending string to server: " + ioexception.getMessage());
+                stop();
+            }
+        }
     }
 
 
     public void handle(Message message) throws Exception {
 
-            byte[] decryptedMessage = this.javaCripto.decrypt(secretKey, message.getEncryptedDataByte());
+        if (message.isHandShake()){
 
-            System.out.println(new String(decryptedMessage));
+            System.out.println("Handshake from server. Public key received");
+            this.serverPublicKey = message.getPublicKey();
+            System.out.println(serverPublicKey);
+
+            byte[] messageEnc = sessionKey.getEncoded();
+
+            byte[] messageEncrypted = javaCripto.encryptSessionKey(serverPublicKey, messageEnc);
+
+            message = new Message(messageEncrypted, true, -1);
+
+            streamOut.writeObject(message);
+            streamOut.flush();
+        }
+
+        else {
+
+            byte[] decryptedMessage = javaCripto.decryptMessage(sessionKey, message.getMessage());
+
+            System.out.println("[" + message.getId()+"] - " + new String(decryptedMessage));
+
+        }
+
+
     }
-    
+
     /*public void handle(String msg)
-    {  
+    {
         // Receives message from server
         if ( msg.equals(".quit"))
-        {  
+        {
             // Leaving, quit command
             System.out.println("Exiting...Please press RETURN to exit ...");
             stop();
@@ -126,23 +130,14 @@ public class ChatClient implements Runnable
             // else, writes message received from server to console
             System.out.println("Recebe alguma coisa?");
             System.out.println(msg);
-
     }*/
-    
+
     // Inits new client thread
-    public void start() throws IOException
+    public void start() throws Exception
     {
         console   = new DataInputStream(System.in);
         streamOut = new ObjectOutputStream(socket.getOutputStream());
 
-        Message newHandShake = new Message();
-
-        streamOut.writeObject(newHandShake);
-        streamOut.flush();
-
-        if (newHandShake.isHandShake()){
-            System.out.println("The client made an handshake!");
-        }
 
         if (thread == null)
         {
@@ -170,22 +165,22 @@ public class ChatClient implements Runnable
         catch(IOException ioe)
         {
             System.out.println("Error closing thread..."); }
+        client.close();
+        client.stop();
+    }
 
-            client.close();  
-            client.stop();
-        }
-   
-    
-    public static void main(String args[]) throws CertificateException, NoSuchAlgorithmException, KeyStoreException, UnrecoverableEntryException {
 
+    public static void main(String args[]) throws Exception {
         ChatClient client = null;
         if (args.length != 2)
             // Displays correct usage syntax on stdout
             System.out.println("Usage: java ChatClient host port");
         else
             // Calls new client
+        {
             client = new ChatClient(args[0], Integer.parseInt(args[1]));
-        System.out.println("Teste");
+
+        }
     }
 
 }
@@ -207,10 +202,8 @@ class ChatClientThread extends Thread
     public void open()
     {
         try
-
-        {  
+        {
             streamIn  = new ObjectInputStream(socket.getInputStream());
-
         }
         catch(IOException ioe)
         {
@@ -236,19 +229,15 @@ class ChatClientThread extends Thread
     {
         while (true)
         {   try
+        {
+            client.handle((Message) streamIn.readObject());
+        }
+        catch(Exception ioe)
+        {
+            ioe.printStackTrace();
+            client.stop();
 
-            {
-                client.handle((Message) streamIn.readObject());
-            }
-            catch(Exception ioe)
-            {  
-                System.out.println("Listening error: " + ioe.getMessage());
-                client.stop();
-
-            }
-
+        }
         }
     }
 }
-
-
