@@ -6,7 +6,9 @@ import javax.crypto.*;
 import java.net.*;
 import java.io.*;
 import java.security.*;
+import java.security.cert.CertificateException;
 import java.util.ArrayList;
+import java.util.Scanner;
 
 
 public class ChatServer implements Runnable
@@ -17,11 +19,12 @@ public class ChatServer implements Runnable
 	private Thread thread = null;
 	private int clientCount = 0;
 
-	private KeyPair keyPair;
 
-	private ArrayList<ObjectPublicKey> publicKeyStores = null;
-
+	// CRIPTO
+	private SecretKey secretKey;
 	private JavaCripto javaCripto = null;
+	private KeyStore keyStore;
+	private KeyStore.SecretKeyEntry secretKeyEntry;
 
     	public void run()
     	{
@@ -50,7 +53,7 @@ public class ChatServer implements Runnable
         	}
     	}
 
-	public ChatServer(int port) throws NoSuchPaddingException, NoSuchProviderException {
+	public ChatServer(int port) throws KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableEntryException {
 		try
 		{
 			// Binds to port and starts server
@@ -59,15 +62,23 @@ public class ChatServer implements Runnable
 			System.out.println("Server started: " + server_socket);
 
 
-			//Getting all the keys for the server
+			javaCripto = new JavaCripto();
 
-			this.javaCripto = new JavaCripto();
+			//GETTING THE PASS TO KEYSTORE
+			System.out.println("Enter the password to access the keystore: ");
+			Scanner sc = new Scanner(System.in);
+			String input = sc.nextLine();
+			char[] serverPass = input.toCharArray();
 
-			//Generating Keys
-			this.keyPair = this.javaCripto.generateKeyPair();
+			//LOGIN TO KEYSTORE
+			keyStore = KeyStore.getInstance("jceks");
+			keyStore.load(new FileInputStream("keystore.jks"), serverPass);
 
-			//ArrayList to store all the keys
-			this.publicKeyStores = new ArrayList<>();
+			//ACCESS THE SECRETKEY
+			secretKeyEntry = (KeyStore.SecretKeyEntry) keyStore.getEntry("secretKey", new KeyStore.PasswordProtection(serverPass));
+			secretKey = secretKeyEntry.getSecretKey();
+
+			System.out.println("Logado com sucesso!");
 
 			start();
 
@@ -77,11 +88,8 @@ public class ChatServer implements Runnable
 			// Error binding to port
 			System.out.println("Binding error (port=" + port + "): " + ioexception.getMessage());
 
-		} catch (NoSuchAlgorithmException e) {
-
-			e.printStackTrace();
 		}
-	}
+    	}
 
     	public void stop()
     	{  
@@ -119,30 +127,22 @@ public class ChatServer implements Runnable
             		for (int i = 0; i < clientCount; i++)
                 		clients[i].send(ID + ": " + input);   */
 
-        	if (message.isHandShake()){
-        		int id = findClient(ID);
-
-				ObjectPublicKey objectPublicKey = new ObjectPublicKey(id, message.getPublicKey());
-				publicKeyStores.add(objectPublicKey);
-
-			}
-			else {
-
 				int id = findClient(ID);
 
-				PublicKey clientPublicKey = getClientPublicKey(id);
+				System.out.println("ENTRAS");
 
-				byte[] decryptedMessage = this.javaCripto.decrypt(clientPublicKey, message.getEncryptedDataByte());
+				byte[] decryptedMessage = javaCripto.decrypt(secretKey, message.getEncryptedDataByte());
 
 				System.out.println("Desencriptou com sucesso, a enviar: " + new String(decryptedMessage));
 
-				byte[] newEncrypted = this.javaCripto.encrypt(this.keyPair.getPrivate(), new String(decryptedMessage));
+				byte[] newEncrypted = javaCripto.encrypt(secretKey, new String(decryptedMessage));
 
 				Message newMessage = new Message(newEncrypted);
+						//new Message(newEncrypted);
 
-				for (int i = 0; i < clientCount; i++)
+				for (int i = 0; i < clientCount; i++) {
 					clients[i].send(newMessage);
-			}
+				}
     	}
     
     	public synchronized void remove(int ID)
@@ -187,11 +187,11 @@ public class ChatServer implements Runnable
                 		clients[clientCount].start();
 
                 		//The addThread will be the "handshake" so we sent a type of message, only with the public key
-                        Message handshakeMessage = new Message(this.keyPair.getPublic());
+                        /*Message handshakeMessage = new Message(this.keyPair.getPublic());
 
                 		clients[clientCount].sendPublicKeyToClient(handshakeMessage);
 
-                		clientCount++; 
+                		clientCount++;*/
             		}
             		catch(IOException ioe)
             		{  
@@ -203,22 +203,9 @@ public class ChatServer implements Runnable
     	}
 
 
-
-    	public PublicKey getClientPublicKey(int id){
-
-    		ObjectPublicKey objectPublicKey = null;
-
-    		for (ObjectPublicKey key : this.publicKeyStores){
-    			if (key.getIdKey()==id){
-    				objectPublicKey = key;
-				}
-			}
-
-			return objectPublicKey.getPublicKey();
-		}
     
     
-	public static void main(String args[]) throws NoSuchPaddingException, NoSuchProviderException {
+	public static void main(String args[]) throws UnrecoverableEntryException, CertificateException, NoSuchAlgorithmException, KeyStoreException {
         	ChatServer server = null;
         
         	if (args.length != 1)
@@ -303,13 +290,13 @@ class ChatServerThread extends Thread
      *
      * @param message
      */
-    public void sendPublicKeyToClient(Message message){
+    public void sendSecretKeyToClient(Message message){
 
         try {
 
             streamOut.writeObject(message);
             streamOut.flush();
-            System.out.println("Public key enviada para o cliente " + getID());
+            System.out.println("SecretKey key enviada para o cliente " + getID());
 
         } catch (IOException e) {
 
@@ -339,32 +326,4 @@ class ChatServerThread extends Thread
 
 }
 
-class ObjectPublicKey{
-
-	private int idKey;
-	private PublicKey publicKey;
-
-
-	public ObjectPublicKey(int idKey, PublicKey publicKey) {
-		this.idKey = idKey;
-		this.publicKey = publicKey;
-	}
-
-
-	public int getIdKey() {
-		return idKey;
-	}
-
-	public void setIdKey(int idKey) {
-		this.idKey = idKey;
-	}
-
-	public PublicKey getPublicKey() {
-		return publicKey;
-	}
-
-	public void setPublicKey(PublicKey publicKey) {
-		this.publicKey = publicKey;
-	}
-}
 

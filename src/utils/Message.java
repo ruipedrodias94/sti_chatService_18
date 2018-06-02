@@ -1,5 +1,6 @@
 package utils;
 
+import javax.crypto.SecretKey;
 import java.io.Serializable;
 import java.security.*;
 
@@ -16,15 +17,6 @@ public class Message implements Serializable {
 
     public Message(String simpleString){
         this.setSimpleString(simpleString);
-    }
-
-    /**
-     * Handshake message type
-     * @param publicKey
-     */
-    public Message(PublicKey publicKey){
-        this.handShake = true;
-        this.publicKey = publicKey;
     }
 
     public Message() {

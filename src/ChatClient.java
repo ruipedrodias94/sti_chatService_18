@@ -5,9 +5,12 @@ import utils.Message;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
 import java.net.*;
 import java.io.*;
 import java.security.*;
+import java.security.cert.CertificateException;
+import java.util.Scanner;
 
 
 //TODO: Transformar todas as streams de inputs para objects
@@ -22,15 +25,13 @@ public class ChatClient implements Runnable
 
 
 
-    private PublicKey serverPublicKey;
-
-    private KeyPair clientKeyPair;
-
-    private JavaCripto javaCripto;
-
+    private SecretKey secretKey;
+    private JavaCripto javaCripto = null;
+    private KeyStore keyStore;
+    private KeyStore.SecretKeyEntry secretKeyEntry;
 
 
-    public ChatClient(String serverName, int serverPort) throws NoSuchPaddingException, NoSuchProviderException {
+    public ChatClient(String serverName, int serverPort) throws KeyStoreException, CertificateException, NoSuchAlgorithmException, UnrecoverableEntryException {
 
         System.out.println("Establishing connection to server...");
 
@@ -40,9 +41,23 @@ public class ChatClient implements Runnable
             socket = new Socket(serverName, serverPort);
             System.out.println("Connected to server: " + socket);
 
-            this.javaCripto = new JavaCripto();
+            javaCripto = new JavaCripto();
 
-            this.clientKeyPair = javaCripto.generateKeyPair();
+            //GETTING THE PASS TO KEYSTORE
+            System.out.println("Enter the password to access the keystore: ");
+            //Scanner sc = new Scanner(System.in);
+            String input = "mypass";
+            char[] serverPass = input.toCharArray();
+
+            //LOGIN TO KEYSTORE
+            keyStore = KeyStore.getInstance("jceks");
+            keyStore.load(new FileInputStream("keystore.jks"), serverPass);
+
+            //ACCESS THE SECRETKEY
+            secretKeyEntry = (KeyStore.SecretKeyEntry) keyStore.getEntry("secretKey", new KeyStore.PasswordProtection(serverPass));
+            secretKey = secretKeyEntry.getSecretKey();
+
+            System.out.println("Logado com sucesso!");
 
             start();
         }
@@ -58,8 +73,6 @@ public class ChatClient implements Runnable
             // Other error establishing connection
 
             System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage()); 
-        } catch (NoSuchAlgorithmException e) {
-            e.printStackTrace();
         }
 
     }
@@ -74,8 +87,10 @@ public class ChatClient implements Runnable
                Message newMessage;
                String stringToEncrypt = console.readLine();
 
-               //Encrypt the data and send them in a message object
-               byte[] dataToEncrypt = this.javaCripto.encrypt(clientKeyPair.getPrivate(), stringToEncrypt);
+               //ENCRYPT THE DATA COMMING FROM COMAND LINE
+               System.out.println(stringToEncrypt);
+
+               byte[] dataToEncrypt = javaCripto.encrypt(secretKey, stringToEncrypt);
 
                newMessage = new Message(dataToEncrypt);
 
@@ -93,19 +108,9 @@ public class ChatClient implements Runnable
 
     public void handle(Message message) throws Exception {
 
-        if (message.isHandShake()){
-
-            System.out.println("Handshake from server. Public key received");
-            System.out.println(message.getPublicKey());
-            this.serverPublicKey = message.getPublicKey();
-
-        }
-        else {
-
-            byte[] decryptedMessage = this.javaCripto.decrypt(serverPublicKey, message.getEncryptedDataByte());
+            byte[] decryptedMessage = this.javaCripto.decrypt(secretKey, message.getEncryptedDataByte());
 
             System.out.println(new String(decryptedMessage));
-        }
     }
     
     /*public void handle(String msg)
@@ -130,7 +135,7 @@ public class ChatClient implements Runnable
         console   = new DataInputStream(System.in);
         streamOut = new ObjectOutputStream(socket.getOutputStream());
 
-        Message newHandShake = new Message(this.clientKeyPair.getPublic());
+        Message newHandShake = new Message();
 
         streamOut.writeObject(newHandShake);
         streamOut.flush();
@@ -171,7 +176,7 @@ public class ChatClient implements Runnable
         }
    
     
-    public static void main(String args[]) throws NoSuchPaddingException, NoSuchProviderException {
+    public static void main(String args[]) throws CertificateException, NoSuchAlgorithmException, KeyStoreException, UnrecoverableEntryException {
 
         ChatClient client = null;
         if (args.length != 2)
