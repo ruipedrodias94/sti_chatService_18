@@ -2,17 +2,14 @@
 import utils.JavaCripto;
 import utils.Message;
 
-import javax.crypto.BadPaddingException;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
+import javax.crypto.*;
 import java.net.*;
 import java.io.*;
 import java.security.*;
 import java.util.Base64;
+import java.util.Timer;
+import java.util.TimerTask;
 
-
-//TODO: Transformar todas as streams de inputs para objects
 
 public class ChatClient implements Runnable
 {
@@ -26,8 +23,18 @@ public class ChatClient implements Runnable
     //KEYS
     private PublicKey serverPublicKey;
     private static SecretKey sessionKey;
+    private KeyPair clientKeyPair;
 
     private static JavaCripto javaCripto;
+
+
+    private static String alias;
+    public static String password;
+
+    private Signature signature;
+
+    private int periodTimer = 20000;
+    private Timer timer;
 
 
 
@@ -41,7 +48,15 @@ public class ChatClient implements Runnable
             System.out.println("Connected to server: " + socket);
 
             javaCripto = new JavaCripto();
+
             sessionKey = javaCripto.generateSecretKey();
+
+            System.out.println("[USERNAME] - " + alias);
+            System.out.println("[PASSWORD] - " + password);
+
+            clientKeyPair = javaCripto.getKeyPairFromKeyStore(alias, password);
+
+            signature = javaCripto.createSignature(clientKeyPair.getPrivate());
 
             start();
         }
@@ -62,6 +77,23 @@ public class ChatClient implements Runnable
 
     public void run()
     {
+
+        timer = new Timer();
+        timer.schedule(new TimerTask() {
+
+            @Override
+            public void run() {
+                try {
+                    renewSecretSessionKey();
+                    System.out.println("[KEYS RENEWED]");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }, 20000, periodTimer);
+
+
+
         while (thread != null)
         {
             try
@@ -72,8 +104,10 @@ public class ChatClient implements Runnable
 
                 //Encrypt the data and send them in a message object
                 byte[] dataToEncrypt = javaCripto.encryptMessage(sessionKey, stringToEncrypt.getBytes());
+                signature.update(dataToEncrypt);
+                byte[] signData = signature.sign();
 
-                newMessage = new Message(dataToEncrypt, false, -1);
+                newMessage = new Message(dataToEncrypt, signData);
 
                 streamOut.writeObject(newMessage);
                 streamOut.flush();
@@ -90,47 +124,51 @@ public class ChatClient implements Runnable
 
     public void handle(Message message) throws Exception {
 
-        if (message.isHandShake()){
+        if (message.isRefused()){
+            System.out.println("CONECTION REFUSED USER UNAUTHORIZED");
+            System.out.println("Exiting...Please press RETURN to exit ...");
+            stop();
 
-            System.out.println("Handshake from server. Public key received");
-            this.serverPublicKey = message.getPublicKey();
-            System.out.println(serverPublicKey);
+        } else {
 
-            byte[] messageEnc = sessionKey.getEncoded();
+            System.out.println("[USER HAS LOGGED IN]");
+            if (message.isHandShake()){
 
-            byte[] messageEncrypted = javaCripto.encryptSessionKey(serverPublicKey, messageEnc);
+                this.serverPublicKey = message.getPublicKey();
 
-            message = new Message(messageEncrypted, true, -1);
+                renewSecretSessionKey();
+            }
 
-            streamOut.writeObject(message);
-            streamOut.flush();
+            else {
+
+                byte[] decryptedMessage = javaCripto.decryptMessage(sessionKey, message.getMessage());
+
+                if (new String(decryptedMessage).equals(".quit")){
+                    System.out.println("Exiting...Please press RETURN to exit ...");
+                    stop();
+                } else {
+                    System.out.println("[" + message.getId()+"] - " + new String(decryptedMessage));
+                }
+
+            }
         }
 
-        else {
 
-            byte[] decryptedMessage = javaCripto.decryptMessage(sessionKey, message.getMessage());
-
-            System.out.println("[" + message.getId()+"] - " + new String(decryptedMessage));
-
-        }
 
 
     }
 
-    /*public void handle(String msg)
-    {
-        // Receives message from server
-        if ( msg.equals(".quit"))
-        {
-            // Leaving, quit command
-            System.out.println("Exiting...Please press RETURN to exit ...");
-            stop();
-        }
-        else
-            // else, writes message received from server to console
-            System.out.println("Recebe alguma coisa?");
-            System.out.println(msg);
-    }*/
+    public void renewSecretSessionKey() throws IllegalBlockSizeException, InvalidKeyException, BadPaddingException, NoSuchAlgorithmException, NoSuchPaddingException, IOException {
+        byte[] messageEnc = sessionKey.getEncoded();
+
+        byte[] messageEncrypted = javaCripto.encryptSessionKey(serverPublicKey, messageEnc);
+
+        Message message = new Message(messageEncrypted, true);
+
+        streamOut.writeObject(message);
+        streamOut.flush();
+    }
+
 
     // Inits new client thread
     public void start() throws Exception
@@ -138,6 +176,12 @@ public class ChatClient implements Runnable
         console   = new DataInputStream(System.in);
         streamOut = new ObjectOutputStream(socket.getOutputStream());
 
+
+        //SEND THE PUBLIC KEY OF THE CLIENT TO THE SERVER
+        Message handshakeMessage = new Message(alias);
+
+        streamOut.writeObject(handshakeMessage);
+        streamOut.flush();
 
         if (thread == null)
         {
@@ -154,12 +198,15 @@ public class ChatClient implements Runnable
         {
             thread.stop();
             thread = null;
+            timer.cancel();
+            timer.purge();
         }
         try
         {
             if (console   != null)  console.close();
             if (streamOut != null)  streamOut.close();
             if (socket    != null)  socket.close();
+
         }
 
         catch(IOException ioe)
@@ -170,16 +217,20 @@ public class ChatClient implements Runnable
     }
 
 
+
     public static void main(String args[]) throws Exception {
         ChatClient client = null;
-        if (args.length != 2)
+        if (args.length != 4)
             // Displays correct usage syntax on stdout
             System.out.println("Usage: java ChatClient host port");
         else
             // Calls new client
         {
-            client = new ChatClient(args[0], Integer.parseInt(args[1]));
 
+            alias = args[2];
+            password = args[3];
+
+            client = new ChatClient(args[0], Integer.parseInt(args[1]));
         }
     }
 
@@ -205,7 +256,7 @@ class ChatClientThread extends Thread
         {
             streamIn  = new ObjectInputStream(socket.getInputStream());
         }
-        catch(IOException ioe)
+        catch(Exception ioe)
         {
             System.out.println("Error getting input stream: " + ioe);
             client.stop();
@@ -230,13 +281,18 @@ class ChatClientThread extends Thread
         while (true)
         {   try
         {
-            client.handle((Message) streamIn.readObject());
+            Thread.sleep(800);
+            client.handle((Message)streamIn.readObject());
         }
-        catch(Exception ioe)
+        catch(IOException ioe)
         {
-            ioe.printStackTrace();
+            System.out.println("Listening error: " + ioe.getMessage());
             client.stop();
+        }
+        catch(ClassNotFoundException e){
 
+        } catch (Exception e) {
+            e.printStackTrace();
         }
         }
     }

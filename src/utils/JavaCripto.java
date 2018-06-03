@@ -1,7 +1,11 @@
 package utils;
 
 import javax.crypto.*;
+
+import java.io.InputStream;
 import java.security.*;
+import java.security.cert.Certificate;
+
 
 public class JavaCripto {
 
@@ -46,4 +50,37 @@ public class JavaCripto {
         return cipher.doFinal(message);
     }
 
+    public KeyPair getKeyPairFromKeyStore(String alias, String password) throws Exception {
+        InputStream ins = JavaCripto.class.getResourceAsStream("keystore.jks");
+
+        KeyStore keyStore = KeyStore.getInstance("JCEKS");
+        keyStore.load(ins, "123456".toCharArray());   //Keystore password
+        KeyStore.PasswordProtection keyPassword =       //Key password
+                new KeyStore.PasswordProtection(password.toCharArray());
+
+        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry(alias, keyPassword);
+
+        java.security.cert.Certificate cert = keyStore.getCertificate(alias);
+        PublicKey publicKey = cert.getPublicKey();
+        PrivateKey privateKey = privateKeyEntry.getPrivateKey();
+        return new KeyPair(publicKey, privateKey);
+
+    }
+
+    public Certificate getCertificate(String alias) throws Exception {
+        InputStream ins = JavaCripto.class.getResourceAsStream("keystore.jks");
+
+        KeyStore keyStore = KeyStore.getInstance("JCEKS");
+        keyStore.load(ins, "123456".toCharArray());   //Keystore password
+
+        java.security.cert.Certificate cert = keyStore.getCertificate(alias);
+        return cert;
+
+    }
+
+    public Signature createSignature(PrivateKey privateKey) throws NoSuchAlgorithmException, InvalidKeyException {
+        Signature signature = Signature.getInstance("SHA256withRSA");
+        signature.initSign(privateKey);
+        return signature;
+    }
 }

@@ -7,6 +7,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.*;
 import java.io.*;
 import java.security.*;
+import java.security.cert.Certificate;
 import java.util.ArrayList;
 
 
@@ -24,6 +25,12 @@ public class ChatServer implements Runnable
 	private static KeyPair serverKeyPair;
 	private SecretKey secretKey;
 	private static ArrayList<SessionObject> sessionObjects = null;
+
+	private Certificate certificate;
+	private PublicKey clientPublicKey;
+
+	private ArrayList<String> forbidenAlias = new ArrayList<>();
+
 
 	//
 
@@ -63,6 +70,9 @@ public class ChatServer implements Runnable
 			server_socket = new ServerSocket(port);
 			System.out.println("Server started: " + server_socket);
 
+			//ADD ALIAS2 AS FOBIDEN
+			forbidenAlias.add("client2");
+
 			start();
 
 		}
@@ -87,49 +97,67 @@ public class ChatServer implements Runnable
 	private int findClient(int ID)
 	{
 		// Returns client from id
-		for (int i = 0; i < clientCount; i++)
+		for (int i = 0; i <= clientCount; i++)
 			if (clients[i].getID() == ID)
 				return i;
 		return -1;
 	}
 
 	public synchronized void handle(int ID, Message message) throws Exception {
-        	/*if (input.equals(".quit"))
-            	{
-                	int leaving_id = findClient(ID);
-                	// Client exits
-                	clients[leaving_id].send(".quit");
-                	// Notify remaing users
-                	for (int i = 0; i < clientCount; i++)
-                    		if (i!=leaving_id)
-                        		clients[i].send("Client " +ID + " exits..");
-                	remove(ID);
-            	}
-        	else
-            		// Brodcast message for every other client online
-            		for (int i = 0; i < clientCount; i++)
-                		clients[i].send(ID + ": " + input);   */
 
-        	if (message.isSession()){
+			if (message.isHandShake()){
+
+				int id = findClient(ID);
+
+				String alias = message.getAlias();
+
+				if (forbidenAlias.contains(alias)){
+					System.out.println("[THE USER: " + id + " IS REFUSED TO CONNECT]");
+					Message messageRefused = new Message(true);
+					clients[id].send(messageRefused);
+					Thread.sleep(5000);
+					remove(id, alias);
+					clients[id].close();
+				}
+
+
+				certificate = javaCripto.getCertificate(alias);
+
+				clientPublicKey = certificate.getPublicKey();
+
+				sessionObjects.add(new SessionObject(alias, null, clientPublicKey));
+
+			}
+
+        	else if (message.isSession()){
 
         		byte[] decryptedMessage = javaCripto.decryptSessionKey(serverKeyPair.getPrivate(), message.getMessage());
 
         		secretKey = new SecretKeySpec(decryptedMessage, 0, decryptedMessage.length, "AES");
 
-        		System.out.println("RECEBEU A CHAVE DE SESSAO, A INSERIR");
+
         		int id = findClient(ID);
 
-        		sessionObjects.add(new SessionObject(id, secretKey));
+        		sessionObjects.get(id).setSecretKey(secretKey);
 
 			} else {
 
 				int id = findClient(ID);
 
+				Signature publicSignature = Signature.getInstance("SHA256withRSA");
+				publicSignature.initVerify(sessionObjects.get(id).getPublicKey());
+				publicSignature.update(message.getMessage());
+
+				if(publicSignature.verify(message.getSignedMessage()) == false){
+					System.out.println("ATTACK DETECTED!");
+				} else {
+					System.out.println("MENSAGEM AUTENTICADA!");
+				}
+
 				byte[] decryptedMessage = javaCripto.decryptMessage(getClientSessionKey(id).getSecretKey(),message.getMessage());
 
-				System.out.println("Desencriptou com sucesso, a enviar: " + new String(decryptedMessage));
 
-				//byte[] newEncrypted = this.javaCripto.encrypt(this.keyPair.getPrivate(), new String(decryptedMessage));
+				//System.out.println("Desencriptou com sucesso, a enviar: " + new String(decryptedMessage));
 
 				for (int i = 0; i < clientCount; i++) {
 					byte[] tempMessageEnc = javaCripto.encryptMessage(getClientSessionKey(i).getSecretKey(), decryptedMessage);
@@ -139,7 +167,7 @@ public class ChatServer implements Runnable
 			}
 	}
 
-	public synchronized void remove(int ID)
+	public synchronized void remove(int ID, String alias)
 	{
 		int pos = findClient(ID);
 
@@ -152,8 +180,12 @@ public class ChatServer implements Runnable
 				for (int i = pos+1; i < clientCount; i++)
 					clients[i-1] = clients[i];
 			clientCount--;
-			sessionObjects.remove(pos);
 
+			for (SessionObject sessionObject : sessionObjects){
+				if (sessionObject.getAlias().equals(alias)){
+					sessionObjects.remove(sessionObject);
+				}
+			}
 			try
 			{
 				toTerminate.close();
@@ -182,9 +214,10 @@ public class ChatServer implements Runnable
 				clients[clientCount].start();
 
 				//The addThread will be the "handshake" so we sent a type of message, only with the public key
-				Message handshakeMessage = new Message(serverKeyPair.getPublic());
 
-				clients[clientCount].sendPublicKeyToClient(handshakeMessage);
+				//Message handshakeMessage = new Message(serverKeyPair.getPublic());
+
+				//clients[clientCount].sendPublicKeyToClient(handshakeMessage);
 
 				clientCount++;
 			}
@@ -204,12 +237,6 @@ public class ChatServer implements Runnable
 		SessionObject sessionObject = null;
 
 		sessionObject = sessionObjects.get(id);
-
-		/*for (SessionObject object : sessionObjects){
-			if (object.getId()== id){
-				sessionObject = object;
-			}
-		}*/
 
 		return sessionObject;
 	}
@@ -266,7 +293,7 @@ class ChatServerThread extends Thread
 		catch(IOException ioexception)
 		{
 			System.out.println(ID + " ERROR sending message: " + ioexception.getMessage());
-			server.remove(ID);
+			server.remove(ID, null);
 			stop();
 		}
 	}
@@ -292,7 +319,7 @@ class ChatServerThread extends Thread
 			catch(Exception ioe)
 			{
 				System.out.println(ID + " ERROR reading: " + ioe.getMessage());
-				server.remove(ID);
+				server.remove(ID, null);
 				stop();
 
 			}
@@ -340,27 +367,39 @@ class ChatServerThread extends Thread
 
 class SessionObject{
 
-	private SecretKey secretKey;
+	private SecretKey sessionKey;
+	private PublicKey publicKey;
+	private String alias;
 	private int id;
 
-	public SessionObject(int id, SecretKey secretKey){
-		this.id = id;
-		this.secretKey = secretKey;
+	public SessionObject(String alias, SecretKey sessionKey, PublicKey publicKey){
+		this.setAlias(alias);
+		this.sessionKey = sessionKey;
+		this.publicKey = publicKey;
 	}
 
 	public SecretKey getSecretKey() {
-		return secretKey;
+		return sessionKey;
 	}
 
 	public void setSecretKey(SecretKey secretKey) {
-		this.secretKey = secretKey;
+		this.sessionKey = secretKey;
 	}
 
-	public int getId() {
-		return id;
+
+	public PublicKey getPublicKey() {
+		return publicKey;
 	}
 
-	public void setId(int id) {
-		this.id = id;
+	public void setPublicKey(PublicKey publicKey) {
+		this.publicKey = publicKey;
+	}
+
+	public String getAlias() {
+		return alias;
+	}
+
+	public void setAlias(String alias) {
+		this.alias = alias;
 	}
 }
