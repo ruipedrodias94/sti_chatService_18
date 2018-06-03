@@ -62,16 +62,13 @@ public class ChatServer implements Runnable
 		}
 	}
 
-	public ChatServer(int port) throws NoSuchPaddingException, NoSuchProviderException {
+	public ChatServer(int port){
 		try
 		{
 			// Binds to port and starts server
 			System.out.println("Binding to port " + port);
 			server_socket = new ServerSocket(port);
 			System.out.println("Server started: " + server_socket);
-
-			//ADD ALIAS2 AS FOBIDEN
-			forbidenAlias.add("client2");
 
 			start();
 
@@ -110,16 +107,6 @@ public class ChatServer implements Runnable
 				int id = findClient(ID);
 
 				String alias = message.getAlias();
-
-				if (forbidenAlias.contains(alias)){
-					System.out.println("[THE USER: " + id + " IS REFUSED TO CONNECT]");
-					Message messageRefused = new Message(true);
-					clients[id].send(messageRefused);
-					Thread.sleep(5000);
-					remove(id, alias);
-					clients[id].close();
-				}
-
 
 				certificate = javaCripto.getCertificate(alias);
 
@@ -215,9 +202,9 @@ public class ChatServer implements Runnable
 
 				//The addThread will be the "handshake" so we sent a type of message, only with the public key
 
-				//Message handshakeMessage = new Message(serverKeyPair.getPublic());
+				Message handshakeMessage = new Message(serverKeyPair.getPublic());
 
-				//clients[clientCount].sendPublicKeyToClient(handshakeMessage);
+				clients[clientCount].sendPublicKeyToClient(handshakeMessage);
 
 				clientCount++;
 			}
@@ -234,7 +221,7 @@ public class ChatServer implements Runnable
 
 	public SessionObject getClientSessionKey(int id){
 
-		SessionObject sessionObject = null;
+		SessionObject sessionObject;
 
 		sessionObject = sessionObjects.get(id);
 

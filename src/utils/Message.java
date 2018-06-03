@@ -19,7 +19,6 @@ public class Message implements Serializable {
     private int id;
 
     public Message(){
-
     }
 
     public Message(String alias){
@@ -46,10 +45,6 @@ public class Message implements Serializable {
     public Message(byte[] message, boolean isSession){
         this.isSession = isSession;
         this.message = message;
-    }
-
-    public Message(boolean refused){
-        this.setRefused(refused);
     }
 
     public boolean isHandShake() {

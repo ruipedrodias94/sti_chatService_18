@@ -124,18 +124,11 @@ public class ChatClient implements Runnable
 
     public void handle(Message message) throws Exception {
 
-        if (message.isRefused()){
-            System.out.println("CONECTION REFUSED USER UNAUTHORIZED");
-            System.out.println("Exiting...Please press RETURN to exit ...");
-            stop();
 
-        } else {
-
-            System.out.println("[USER HAS LOGGED IN]");
             if (message.isHandShake()){
 
                 this.serverPublicKey = message.getPublicKey();
-
+                System.out.println("[USER HAS LOGGED IN]");
                 renewSecretSessionKey();
             }
 
@@ -150,7 +143,6 @@ public class ChatClient implements Runnable
                     System.out.println("[" + message.getId()+"] - " + new String(decryptedMessage));
                 }
 
-            }
         }
 
 
