@@ -122,6 +122,7 @@ public class ChatServer implements Runnable
 
         		secretKey = new SecretKeySpec(decryptedMessage, 0, decryptedMessage.length, "AES");
 
+				System.out.println("[SESSION KEY RENEWED FOR THE CLIENT: " + ID + "]");
 
         		int id = findClient(ID);
 

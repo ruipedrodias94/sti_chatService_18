@@ -7,6 +7,7 @@ import java.net.*;
 import java.io.*;
 import java.security.*;
 import java.util.Base64;
+import java.util.Scanner;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -51,9 +52,6 @@ public class ChatClient implements Runnable
 
             sessionKey = javaCripto.generateSecretKey();
 
-            System.out.println("[USERNAME] - " + alias);
-            System.out.println("[PASSWORD] - " + password);
-
             clientKeyPair = javaCripto.getKeyPairFromKeyStore(alias, password);
 
             signature = javaCripto.createSignature(clientKeyPair.getPrivate());
@@ -71,6 +69,10 @@ public class ChatClient implements Runnable
         {
             // Other error establishing connection
             System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage());
+        } catch(UnrecoverableKeyException e){
+            System.out.println("[You're not an autheticated user. Disconnecting you....]");
+        } catch(NullPointerException e){
+            System.out.println("[You're not an autheticated user. Disconnecting you....]");
         }
 
     }
@@ -85,7 +87,6 @@ public class ChatClient implements Runnable
             public void run() {
                 try {
                     renewSecretSessionKey();
-                    System.out.println("[KEYS RENEWED]");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -128,7 +129,7 @@ public class ChatClient implements Runnable
             if (message.isHandShake()){
 
                 this.serverPublicKey = message.getPublicKey();
-                System.out.println("[USER HAS LOGGED IN]");
+                System.out.println("[YOUR ARE LOGGED]");
                 renewSecretSessionKey();
             }
 
@@ -219,8 +220,14 @@ public class ChatClient implements Runnable
             // Calls new client
         {
 
-            alias = args[2];
-            password = args[3];
+            Scanner scanner = new Scanner(System.in);
+            System.out.println("Insert your alias: ");
+            alias = scanner.next();
+
+
+            System.out.println("Insert your password: ");
+            password = scanner.next();
+
 
             client = new ChatClient(args[0], Integer.parseInt(args[1]));
         }
