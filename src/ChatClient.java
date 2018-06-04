@@ -67,8 +67,7 @@ public class ChatClient implements Runnable
 
         catch(IOException ioexception)
         {
-            // Other error establishing connection
-            System.out.println("Error establishing connection - unexpected exception: " + ioexception.getMessage());
+            System.out.println("[YOU ARE A FORBBIDEN USER. DISCONNECTING YOU...]");
         } catch(UnrecoverableKeyException e){
             System.out.println("[You're not an autheticated user. Disconnecting you....]");
         } catch(NullPointerException e){
@@ -171,7 +170,14 @@ public class ChatClient implements Runnable
 
 
         //SEND THE PUBLIC KEY OF THE CLIENT TO THE SERVER
-        Message handshakeMessage = new Message(alias);
+        Message authMessage = new Message(alias, false, true);
+
+        streamOut.writeObject(authMessage);
+        streamOut.flush();
+
+        Thread.sleep(2000);
+
+        Message handshakeMessage = new Message(alias, true, false);
 
         streamOut.writeObject(handshakeMessage);
         streamOut.flush();

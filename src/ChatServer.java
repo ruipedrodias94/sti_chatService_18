@@ -70,6 +70,7 @@ public class ChatServer implements Runnable
 			server_socket = new ServerSocket(port);
 			System.out.println("Server started: " + server_socket);
 
+			forbidenAlias.add("client2");
 			start();
 
 		}
@@ -113,6 +114,23 @@ public class ChatServer implements Runnable
 				clientPublicKey = certificate.getPublicKey();
 
 				sessionObjects.add(new SessionObject(alias, null, clientPublicKey));
+
+			}
+
+			else if (message.isAuthentication()) {
+
+				String alias = message.getAlias();
+
+				int id = findClient(ID);
+
+				if (forbidenAlias.contains(alias)){
+					System.out.println("[THE USER: " + alias + " IS REFUSED TO CONNECT]");
+					//Message messageRefused = new Message(true);
+					//clients[id].send(messageRefused);
+
+					remove(id, alias);
+					clients[id].close();
+				}
 
 			}
 

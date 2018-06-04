@@ -8,6 +8,7 @@ public class Message implements Serializable {
 
     private boolean handShake = false;
     private boolean isSession = false;
+    private boolean authentication = false;
     private PublicKey publicKey;
     private SecretKey secretKey;
     private byte[] message;
@@ -21,8 +22,9 @@ public class Message implements Serializable {
     public Message(){
     }
 
-    public Message(String alias){
-        this.handShake = true;
+    public Message(String alias, boolean handshake, boolean authentication){
+        this.handShake = handshake;
+        this.authentication = authentication;
         this.setAlias(alias);
     }
 
@@ -45,6 +47,10 @@ public class Message implements Serializable {
     public Message(byte[] message, boolean isSession){
         this.isSession = isSession;
         this.message = message;
+    }
+
+    public boolean isAuthentication() {
+        return authentication;
     }
 
     public boolean isHandShake() {
